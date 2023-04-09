@@ -1,0 +1,249 @@
+---
+title: "mixture k-mean"
+author: "Jiahao Tian"
+date: "2023-04-09"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(dplyr)
+library(readr)
+library(tumgr)
+library(minpack.lm)
+```
+
+
+```{r}
+DF1 = read_csv("~/Desktop/MS report/data/Data-selected/10083_IMQUAL_01Oct2021.csv")
+DF2 = read_csv("~/Desktop/MS report/data/Data-selected/10083_TEXTCAD_01Oct2021.csv")
+```
+
+
+```{r}
+d2 = DF1 %>% 
+  dplyr:: select(contains("SUBJID",ignore.case = TRUE), 
+                 contains("VISITDTN",ignore.case = TRUE),
+                 contains("SLICE",ignore.case = TRUE))
+
+qlf = DF2 %>% 
+  dplyr:: select(contains("SUBJID",ignore.case = TRUE), 
+                 contains("VISITDTN",ignore.case = TRUE),
+                 contains("REGI",ignore.case = TRUE), 
+                 contains("QLF",ignore.case = TRUE))
+```
+
+
+```{R}
+d2$name = as.numeric(factor(d2$SUBJID, 
+                  levels=unique(d2$SUBJID)))
+qlf$name = as.numeric(factor(qlf$SUBJID, 
+                  levels=unique(qlf$SUBJID)))
+
+d2$SLICE_THICKNESS = as.numeric(d2$SLICE_THICKNESS)
+d2$SLICE_SPACING = as.numeric(d2$SLICE_SPACING)
+
+qlf = qlf[grep("WHOLE", qlf$REGION), , drop = FALSE]
+```
+
+
+```{r}
+d2$size = d2$SLICE_THICKNESS * d2$SLICE_SPACING 
+
+qlf$size = (qlf$QLFCAD * 5014) / 100
+```
+
+
+```{r}  
+lapply(d2, function(x) {length(which(is.na(x)))})
+lapply(qlf, function(x) {length(which(is.na(x)))})
+d2 = na.omit(d2)
+```
+
+
+```{r}
+d2$VISITDTN = strptime(d2$VISITDTN, "%d%b%Y")
+d2$date = as.numeric(d2$VISITDTN)
+
+qlf$date = strptime(qlf$VISITDTN, "%d%b%Y")
+qlf$date = as.numeric(qlf$date)
+```
+
+```{r}
+d2 = d2 %>% 
+  dplyr:: select(contains("name",ignore.case = TRUE), 
+                 #contains("date",ignore.case = TRUE),
+                 contains("size",ignore.case = TRUE))
+
+qlf = qlf %>% 
+  dplyr:: select(contains("name",ignore.case = TRUE), 
+                 #contains("date",ignore.case = TRUE),
+                 contains("size",ignore.case = TRUE))
+
+```
+
+```{r}
+d2 = as.data.frame(d2)
+qlf = as.data.frame(qlf)
+```
+
+
+```{r}
+library(mclust)
+
+results <- Mclust(qlf$size)
+
+# View the clustering results
+(results$classification)
+
+plot(results, what = c("classification"))
+
+
+```
+
+
+```{r}
+## Using mixture models for clustering in the dataset
+## Compare k-means clustering and a location and scale mixture model with K normals
+
+### Loading data and setting up global variables
+library(mclust)
+library(mvtnorm)
+
+### Defining a custom function to create pair plots
+
+pairs2 = function(x, col="black", pch=16, labels=NULL, names = colnames(x)){
+  n = dim(x)[1]
+  p = dim(x)[1]
+  par(mfrow=c(p,p))
+  for(k in 1:p){
+    for(l in 1:p){
+      if(k!=l){
+        par(mar=c(1,1,1,1))
+        plot(x[,k], x[,l], type="n", xlab="", ylab="")
+        if(is.null(labels)){
+          points(x[,k], x[,l], pch=pch, col=col)
+        }else{
+          text(x[,k], x[,l], labels=labels, col=col)
+        }
+      }else{
+        plot(seq(0,5), seq(0,5), type="n", xlab="", ylab="", axes=FALSE)
+        text(1,1,names[k], cex=1.2)
+      }
+    }
+  }
+}
+
+## Setup data
+x       = as.matrix(qlf[,-5])
+n       = dim(x)[1]
+p       = dim(x)[1]       # Number of features
+KK      = 4
+epsilon = 0.0000001
+par(mfrow=c(1,1))
+#par(mfcol=c(1,1),mai=c(0.5,0.5,0.5,0))
+par(mar=c(1,1,1,1))
+colscale = c("black","blue","red","yellow")
+shortnam  = c("dx","dg","gx","dgpi")
+par(fig=c(0, 0.8, 0, 0.8))
+pairs2(x, col=colscale[qlf[,5]],pch=1, labels=shortnam[as.numeric(qlf[,5])])
+```
+
+
+```{r}
+## Setup data
+x       = as.matrix(qlf[,-5])
+n       = dim(x)[1]
+p       = dim(x)[1]       # Number of features
+KK      = 4
+epsilon = 0.0000001
+
+# Initialize the parameters of the algorithm
+set.seed(63252)
+numruns = 15
+v.sum   = array(0, dim=c(numruns, n, KK))
+QQ.sum  = rep(0, numruns)
+```
+
+```{r}
+for(ss in 1:numruns){
+  w   = rep(1,KK)/KK  #Assign equal weight to each component to start with
+  mu  = rmvnorm(KK, apply(x,2,mean), 3*var(x))   #Cluster centers randomly spread over the support of the data
+  Sigma      = array(0, dim=c(KK,p,p))  #Initial variances are assumed to be the same
+  Sigma[1,,] = var(x)
+  Sigma[2,,] = var(x)
+  Sigma[3,,] = var(x)
+  Sigma[4,,] = var(x)
+
+  
+  sw     = FALSE
+  QQ     = -Inf
+  QQ.out = NULL
+  s      = 0
+  
+  while(!sw){
+    ## E step
+    v = array(0, dim=c(n,KK))
+    for(k in 1:KK){  #Compute the log of the weights
+      v[,k] = log(w[k]) + mvtnorm::dmvnorm(x, mu[k,], Sigma[k,,], log=TRUE) 
+    }
+    for(i in 1:n){
+      v[i,] = exp(v[i,] - max(v[i,]))/sum(exp(v[i,] - max(v[i,])))  #Go from logs to actual weights in a numerically stable manner
+    }
+    
+    ## M step
+    w = apply(v,2,mean)
+    mu = matrix(0, nrow=KK, ncol=p)
+    for(k in 1:KK){
+      for(i in 1:n){
+        mu[k,]    = mu[k,] + v[i,k]*x[i,]
+      }
+      mu[k,] = mu[k,]/sum(v[,k])
+    }
+    Sigma = array(0,dim=c(KK, p, p))
+    for(k in 1:KK){
+      for(i in 1:n){
+        Sigma[k,,] = Sigma[k,,] + v[i,k]*(x[i,] - mu[k,])%*%t(x[i,] - mu[k,])
+      }
+      Sigma[k,,] = Sigma[k,,]/sum(v[,k])
+    }
+    
+    ##Check convergence
+    QQn = 0
+    for(i in 1:n){
+      for(k in 1:KK){
+        QQn = QQn + v[i,k]*(log(w[k]) + mvtnorm::dmvnorm(x[i,],mu[k,],Sigma[k,,],log=TRUE))
+      }
+    }
+    if(abs(QQn-QQ)/abs(QQn)<epsilon){
+      sw=TRUE
+    }
+    QQ = QQn
+    QQ.out = c(QQ.out, QQ)
+    s = s + 1
+  }
+  
+  v.sum[ss,,] = v
+  QQ.sum[ss]  = QQ.out[s]
+  print(paste("ss =", ss))
+}
+
+```
+
+
+```{r}
+## Cluster reconstruction under the mixture model
+cc = apply(v.sum[which.max(QQ.sum),,], 1 ,which.max)
+colscale = c("black","blue","red")
+pairs2(x, col=colscale[cc], labels=cc)
+ARImle = adjustedRandIndex(cc, as.numeric(iris[,5]))  # Higher values indicate larger agreement
+
+## Cluster reconstruction under the K-means algorithm
+irisCluster <- kmeans(x, 3, nstart = numruns)
+colscale = c("black","blue","red")
+pairs2(x, col=colscale[irisCluster$cluster], labels=irisCluster$cluster)
+ARIkmeans = adjustedRandIndex(irisCluster$cluster, as.numeric(iris[,5]))
+
+
+```

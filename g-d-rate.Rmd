@@ -1,0 +1,105 @@
+---
+title: "g-d-rate"
+author: "Jiahao Tian"
+date: "2023-04-06"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(dplyr)
+library(readr)
+library(tumgr)
+library(minpack.lm)
+```
+
+
+```{r}
+DF1 = read_csv("~/Desktop/MS report/data/Data-selected/10083_IMQUAL_01Oct2021.csv")
+DF2 = read_csv("~/Desktop/MS report/data/Data-selected/10083_TEXTCAD_01Oct2021.csv")
+```
+
+
+```{r}
+d2 = DF1 %>% 
+  dplyr:: select(contains("SUBJID",ignore.case = TRUE), 
+                 contains("VISITDTN",ignore.case = TRUE),
+                 contains("SLICE",ignore.case = TRUE))
+
+qlf = DF2 %>% 
+  dplyr:: select(contains("SUBJID",ignore.case = TRUE), 
+                 contains("VISITDTN",ignore.case = TRUE),
+                 contains("REGI",ignore.case = TRUE), 
+                 contains("QLF",ignore.case = TRUE))
+```
+
+
+```{R}
+d2$name = as.numeric(factor(d2$SUBJID, 
+                  levels=unique(d2$SUBJID)))
+qlf$name = as.numeric(factor(qlf$SUBJID, 
+                  levels=unique(qlf$SUBJID)))
+
+d2$SLICE_THICKNESS = as.numeric(d2$SLICE_THICKNESS)
+d2$SLICE_SPACING = as.numeric(d2$SLICE_SPACING)
+
+qlf = qlf[grep("WHOLE", qlf$REGION), , drop = FALSE]
+```
+
+
+```{r}
+d2$size = d2$SLICE_THICKNESS * d2$SLICE_SPACING 
+
+qlf$size = (qlf$QLFCAD * 5014) / 100
+```
+
+
+```{r}  
+lapply(d2, function(x) {length(which(is.na(x)))})
+lapply(qlf, function(x) {length(which(is.na(x)))})
+d2 = na.omit(d2)
+```
+
+
+```{r}
+d2$VISITDTN = strptime(d2$VISITDTN, "%d%b%Y")
+d2$date = as.numeric(d2$VISITDTN)
+
+qlf$date = strptime(qlf$VISITDTN, "%d%b%Y")
+qlf$date = as.numeric(qlf$date)
+```
+
+```{r}
+d2 = d2 %>% 
+  dplyr:: select(contains("name",ignore.case = TRUE), 
+                 contains("date",ignore.case = TRUE),
+                 contains("size",ignore.case = TRUE))
+
+qlf = qlf %>% 
+  dplyr:: select(contains("name",ignore.case = TRUE), 
+                 contains("date",ignore.case = TRUE),
+                 contains("size",ignore.case = TRUE))
+
+```
+
+```{r}
+d2 = as.data.frame(d2)
+qlf = as.data.frame(qlf)
+```
+
+```{r}
+out1 = gdrate(d2, 0.05, FALSE)
+out2 = gdrate(qlf, 0.05, FALSE)
+
+out1$models
+out2$models
+
+```
+
+
+```{r}
+out1$results
+out2$results
+
+```
