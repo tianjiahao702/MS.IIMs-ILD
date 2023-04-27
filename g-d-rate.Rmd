@@ -16,12 +16,19 @@ library(minpack.lm)
 
 
 ```{r}
-DF1 = read_csv("~/Desktop/MS report/data/Data-selected/10083_IMQUAL_01Oct2021.csv")
-DF2 = read_csv("~/Desktop/MS report/data/Data-selected/10083_TEXTCAD_01Oct2021.csv")
-```
+## read data
+
+DF1 = read.table(
+  "~/Desktop/MS report/data/Data-selected/10083_IMQUAL_01Oct2021.csv", 
+  sep = ",", header = TRUE)
+
+DF2 = read.table(
+  "~/Desktop/MS report/data/Data-selected/10083_TEXTCAD_01Oct2021.csv",
+  sep = ",", header = TRUE)
 
 
-```{r}
+## extract needed variables for model
+
 d2 = DF1 %>% 
   dplyr:: select(contains("SUBJID",ignore.case = TRUE), 
                  contains("VISITDTN",ignore.case = TRUE),
@@ -32,10 +39,9 @@ qlf = DF2 %>%
                  contains("VISITDTN",ignore.case = TRUE),
                  contains("REGI",ignore.case = TRUE), 
                  contains("QLF",ignore.case = TRUE))
-```
 
+## change variable type
 
-```{R}
 d2$name = as.numeric(factor(d2$SUBJID, 
                   levels=unique(d2$SUBJID)))
 qlf$name = as.numeric(factor(qlf$SUBJID, 
@@ -44,33 +50,29 @@ qlf$name = as.numeric(factor(qlf$SUBJID,
 d2$SLICE_THICKNESS = as.numeric(d2$SLICE_THICKNESS)
 d2$SLICE_SPACING = as.numeric(d2$SLICE_SPACING)
 
+# only use whole lung data for g-d-rate model
+
 qlf = qlf[grep("WHOLE", qlf$REGION), , drop = FALSE]
-```
 
+## change to 2d dim 
+## change name to size due to model requirment
 
-```{r}
 d2$size = d2$SLICE_THICKNESS * d2$SLICE_SPACING 
-
-qlf$size = (qlf$QLFCAD * 5014) / 100
+qlf$size = qlf$QLFCAD
 ```
-
-
-```{r}  
-lapply(d2, function(x) {length(which(is.na(x)))})
-lapply(qlf, function(x) {length(which(is.na(x)))})
-d2 = na.omit(d2)
-```
-
 
 ```{r}
-d2$VISITDTN = strptime(d2$VISITDTN, "%d%b%Y")
-d2$date = as.numeric(d2$VISITDTN)
+## change time to day due model requirement
 
-qlf$date = strptime(qlf$VISITDTN, "%d%b%Y")
+d2$date = as.Date(d2$VISITDTN, format = "%d%b%Y")
+d2$date = as.numeric(d2$date)
+
+qlf$date = as.Date(qlf$VISITDTN, format = "%d%b%Y")
 qlf$date = as.numeric(qlf$date)
-```
 
-```{r}
+
+## extract needed variables for model
+
 d2 = d2 %>% 
   dplyr:: select(contains("name",ignore.case = TRUE), 
                  contains("date",ignore.case = TRUE),
@@ -81,25 +83,536 @@ qlf = qlf %>%
                  contains("date",ignore.case = TRUE),
                  contains("size",ignore.case = TRUE))
 
-```
 
-```{r}
+## change to dataframe fro model use
+
 d2 = as.data.frame(d2)
 qlf = as.data.frame(qlf)
-```
 
-```{r}
+## check and delet missing value
+
+lapply(d2, function(x) {length(which(is.na(x)))})
+lapply(qlf, function(x) {length(which(is.na(x)))})
+d2 = na.omit(d2)
+
+
+## run model
+
 out1 = gdrate(d2, 0.05, FALSE)
 out2 = gdrate(qlf, 0.05, FALSE)
 
 out1$models
 out2$models
 
+out1$results
+out2$results
+```
+
+```{R}
+# Define a function to generate the plot
+plot_data = function(data) {
+
+    # Create a new plot
+  plot = ggplot(data, aes(x = date, y = size, group = name, color = selected)) +
+    geom_point(size = 1) +
+    geom_line() +
+    labs(x = "Date", y = "Score") +
+    theme_minimal() +
+    theme(legend.position = "top")
+  
+  # Add text labels for name on each line
+  plot = plot + geom_text(aes(label = name), vjust = -0.5, hjust = 1,
+                          size = 2, color = "black")
+  
+  return(plot)
+}
 ```
 
 
 ```{r}
-out1$results
-out2$results
+##plot results
+
+cols_to_select = c("type", "selected", "name")
+
+gd1 = as.data.frame(out1$allest[cols_to_select])
+gd2 = as.data.frame(out2$allest[cols_to_select])
+
+# delete duplicated rows
+gd1 = gd1[!duplicated(gd1), ]
+gd2 = gd2[!duplicated(gd2), ]
+
+
+d2_2 = merge(d2, gd1, by = "name", all = TRUE)
+qlf_2 = merge(qlf, gd2, by = "name", all = TRUE)
+
+
+d2_2$date = as.Date(d2_2$date, origin = "1970-01-01")
+qlf_2$date = as.Date(qlf_2$date, origin = "1970-01-01")
+
+plot_data(d2_2)
+plot_data(qlf_2)
+```
+
+###########################################
+###########################################
+## combined data which now contains treatments
+
+
+```{r}
+## read data
+
+DF1 = read.table(
+  "~/Desktop/MS report/data/Data-selected/10083_IMQUAL_01Oct2021.csv", 
+  sep = ",", header = TRUE)
+
+DF2 = read.table(
+  "~/Desktop/MS report/data/Data-selected/10083_TEXTCAD_01Oct2021.csv",
+  sep = ",", header = TRUE)
+
+Treat = read.table(
+  "~/Desktop/MS report/data/Data-selected 2/IIMQILD_221104_Box.csv", 
+  sep = ",", header = TRUE)
+
+## change column name for merge
+colnames(Treat)[which(names(Treat) == "Patient_ID")] <- "SUBJID"
+
+
+##merge
+DF1_merge = merge(DF1, Treat, by = 'SUBJID', all = TRUE)
+DF2_merge = merge(DF2, Treat, by = 'SUBJID', all = TRUE)
+
+
+##extract needed variables
+
+d2 = DF1_merge %>% 
+  dplyr:: select(Age,
+                 V1_WL_QLF,
+                 V1_WL_QILD,
+                 contains("SUBJID",ignore.case = FALSE), 
+                 contains("VISITDTN",ignore.case = FALSE),
+                 contains("Sex",ignore.case = FALSE),
+                 contains("V1_CTdate",ignore.case = FALSE),
+                 contains("V1V2",ignore.case = FALSE),
+                 contains("SLICE",ignore.case = FALSE))
+
+qlf = DF2_merge %>% 
+  dplyr:: select(Age,
+                 V1_WL_QLF,
+                 V1_WL_QILD,
+                 QLFCAD,
+                 contains("SUBJID",ignore.case = FALSE), 
+                 contains("VISITDTN",ignore.case = FALSE),
+                 contains("Sex",ignore.case = FALSE),
+                 contains("V1_CTdate",ignore.case = FALSE),
+                 contains("V1V2",ignore.case = FALSE),
+                 contains("REGI",ignore.case = FALSE))
+
+## only need whole lung data
+qlf = qlf[grep("WHOLE", qlf$REGION), , drop = FALSE]
+
+
+## change variable type
+
+d2$name = as.numeric(factor(d2$SUBJID, 
+                  levels=unique(d2$SUBJID)))
+qlf$name = as.numeric(factor(qlf$SUBJID, 
+                  levels=unique(qlf$SUBJID)))
+
+d2$SLICE_THICKNESS = as.numeric(d2$SLICE_THICKNESS)
+d2$SLICE_SPACING = as.numeric(d2$SLICE_SPACING)
+
+d2$size = d2$SLICE_THICKNESS * d2$SLICE_SPACING 
+
+colnames(qlf)[which(names(qlf) == "QLFCAD")] = "size"
+
+
+## check and delet missing value
+
+#lapply(d2, function(x) {length(which(is.na(x)))})
+#lapply(qlf, function(x) {length(which(is.na(x)))})
+#d2 = na.omit(d2)
+
+
+## change time to day due model requirement
+
+d2$date = as.Date(d2$VISITDTN, format = "%d%b%Y")
+d2$date = as.numeric(d2$date)
+
+qlf$date = as.Date(qlf$VISITDTN, format = "%d%b%Y")
+qlf$date = as.numeric(qlf$date)
+
+
+as.data.frame(qlf)
+as.data.frame(d2)
 
 ```
+
+```{r}
+create_sub_dataframes = function(df, dichotomous_vars) {
+  # Create a list to store sub-dataframes
+  sub_dataframes = list()
+
+  # Loop through each dichotomous variable
+  for (var in dichotomous_vars) {
+    # Extract unique values of the variable
+    unique_vals = unique(df[[var]])
+    
+    # Loop through each unique value
+    for (val in unique_vals) {
+      # Create a sub-dataframe for the current combination of values
+      sub_df = df[df[[var]] == val, ]
+      
+      # Select columns 
+      sub_df = select(sub_df, contains("name", ignore.case = TRUE), date, contains("size", ignore.case = TRUE))
+      
+      # Remove missing values using na.omit
+      sub_df = na.omit(sub_df)
+      
+      # Add the sub-dataframe to the list
+      sub_dataframes[[paste0(var, "_", val)]] = sub_df
+    }
+  }
+
+  # Return the list of sub-dataframes
+  return(sub_dataframes)
+}
+```
+
+```{r}
+# List of dichotomous variables
+dichotomous_vars = c("HiPD_V1V2", "CsA_V1V2", "CTX_V1V2","AZT_V1V2", 
+                      "Tac_V1V2", "MMF_V1V2", "MTX_V1V2", "IVIg_V1V2",
+                      "RTX_V1V2", "ISswitch_V1V2")
+
+sub_dataframes = create_sub_dataframes(qlf, dichotomous_vars)
+
+```
+
+
+```{r}
+# g-d-rate model for treatment HiPD_V1V2
+
+out_hipd_0 = gdrate(sub_dataframes$HiPD_V1V2_0, 0.05, FALSE)
+out_hipd_1 = gdrate(sub_dataframes$HiPD_V1V2_1, 0.05, TRUE)
+
+out_hipd_0$models
+out_hipd_1$models
+```
+
+```{r}
+cols_to_select = c("type", "selected", "name")
+
+gd1 = as.data.frame(out_hipd_0$allest[cols_to_select])
+gd2 = as.data.frame(out_hipd_1$allest[cols_to_select])
+
+# delete duplicated rows
+gd1 = gd1[!duplicated(gd1), ]
+gd2 = gd2[!duplicated(gd2), ]
+
+
+h0 = merge(sub_dataframes$HiPD_V1V2_0, gd1, by = "name", all = TRUE)
+h1 = merge(sub_dataframes$HiPD_V1V2_1, gd2, by = "name", all = TRUE)
+
+
+h0$date = as.Date(h0$date, origin = "1970-01-01")
+h1$date = as.Date(h1$date, origin = "1970-01-01")
+
+plot_data(h0)
+plot_data(h1)
+```
+
+```{r}
+# g-d-rate model for treatment CsA_V1V2
+
+out_csa_0 = gdrate(sub_dataframes$CsA_V1V2_0, 0.05, FALSE)
+out_csa_1 = gdrate(sub_dataframes$CsA_V1V2_1, 0.05, FALSE)
+
+out_csa_0$models
+out_csa_1$models
+```
+
+```{r}
+cols_to_select = c("type", "selected", "name")
+
+gd1 = as.data.frame(out_csa_0$allest[cols_to_select])
+gd2 = as.data.frame(out_csa_1$allest[cols_to_select])
+
+# delete duplicated rows
+gd1 = gd1[!duplicated(gd1), ]
+gd2 = gd2[!duplicated(gd2), ]
+
+
+csa0 = merge(sub_dataframes$CsA_V1V2_0, gd1, by = "name", all = TRUE)
+csa1 = merge(sub_dataframes$CsA_V1V2_1, gd2, by = "name", all = TRUE)
+
+
+csa0$date = as.Date(csa0$date, origin = "1970-01-01")
+csa1$date = as.Date(csa1$date, origin = "1970-01-01")
+
+plot_data(csa0)
+plot_data(csa1)
+```
+
+
+```{r}
+# g-d-rate model for treatment CTX_V1V2
+
+out_ctx_0 = gdrate(sub_dataframes$CTX_V1V2_0, 0.05, FALSE)
+out_ctx_1 = gdrate(sub_dataframes$CTX_V1V2_1, 0.05, FALSE)
+
+out_ctx_0$models
+out_ctx_1$models
+```
+
+```{r}
+cols_to_select = c("type", "selected", "name")
+
+gd1 = as.data.frame(out_ctx_0$allest[cols_to_select])
+gd2 = as.data.frame(out_ctx_1$allest[cols_to_select])
+
+# delete duplicated rows
+gd1 = gd1[!duplicated(gd1), ]
+gd2 = gd2[!duplicated(gd2), ]
+
+
+h0 = merge(sub_dataframes$CTX_V1V2_0, gd1, by = "name", all = TRUE)
+h1 = merge(sub_dataframes$CTX_V1V2_1, gd2, by = "name", all = TRUE)
+
+
+h0$date = as.Date(h0$date, origin = "1970-01-01")
+h1$date = as.Date(h1$date, origin = "1970-01-01")
+
+plot_data(h0)
+plot_data(h1)
+```
+
+
+```{r}
+# g-d-rate model for treatment azt_V1V2
+
+out_azt_0 = gdrate(sub_dataframes$AZT_V1V2_0, 0.05, FALSE)
+out_azt_1 = gdrate(sub_dataframes$AZT_V1V2_1, 0.05, FALSE)
+
+out_azt_0$models
+out_azt_1$models
+```
+
+```{r}
+cols_to_select = c("type", "selected", "name")
+
+gd1 = as.data.frame(out_azt_0$allest[cols_to_select])
+gd2 = as.data.frame(out_azt_1$allest[cols_to_select])
+
+# delete duplicated rows
+gd1 = gd1[!duplicated(gd1), ]
+gd2 = gd2[!duplicated(gd2), ]
+
+
+h0 = merge(sub_dataframes$AZT_V1V2_0, gd1, by = "name", all = TRUE)
+h1 = merge(sub_dataframes$AZT_V1V2_1, gd2, by = "name", all = TRUE)
+
+
+h0$date = as.Date(h0$date, origin = "1970-01-01")
+h1$date = as.Date(h1$date, origin = "1970-01-01")
+
+plot_data(h0)
+plot_data(h1)
+```
+
+
+```{r}
+# g-d-rate model for treatment tac_V1V2
+
+out_tac_0 = gdrate(sub_dataframes$Tac_V1V2_0, 0.05, FALSE)
+out_tac_1 = gdrate(sub_dataframes$Tac_V1V2_1, 0.05, FALSE)
+
+out_tac_0$models
+out_tac_1$models
+```
+
+```{r}
+cols_to_select = c("type", "selected", "name")
+
+gd1 = as.data.frame(out_tac_0$allest[cols_to_select])
+gd2 = as.data.frame(out_tac_1$allest[cols_to_select])
+
+# delete duplicated rows
+gd1 = gd1[!duplicated(gd1), ]
+gd2 = gd2[!duplicated(gd2), ]
+
+
+h0 = merge(sub_dataframes$Tac_V1V2_0, gd1, by = "name", all = TRUE)
+h1 = merge(sub_dataframes$Tac_V1V2_1, gd2, by = "name", all = TRUE)
+
+
+h0$date = as.Date(h0$date, origin = "1970-01-01")
+h1$date = as.Date(h1$date, origin = "1970-01-01")
+
+plot_data(h0)
+plot_data(h1)
+```
+
+
+```{r}
+# g-d-rate model for treatment MMF_V1V2
+
+out_mmf_0 = gdrate(sub_dataframes$MMF_V1V2_0, 0.05, FALSE)
+out_mmf_1 = gdrate(sub_dataframes$MMF_V1V2_1, 0.05, FALSE)
+
+out_mmf_0$models
+out_mmf_1$models
+```
+
+```{r}
+cols_to_select = c("type", "selected", "name")
+
+gd1 = as.data.frame(out_mmf_0$allest[cols_to_select])
+gd2 = as.data.frame(out_mmf_1$allest[cols_to_select])
+
+# delete duplicated rows
+gd1 = gd1[!duplicated(gd1), ]
+gd2 = gd2[!duplicated(gd2), ]
+
+
+h0 = merge(sub_dataframes$MMF_V1V2_0, gd1, by = "name", all = TRUE)
+h1 = merge(sub_dataframes$MMF_V1V2_1, gd2, by = "name", all = TRUE)
+
+
+h0$date = as.Date(h0$date, origin = "1970-01-01")
+h1$date = as.Date(h1$date, origin = "1970-01-01")
+
+plot_data(h0)
+plot_data(h1)
+```
+
+
+```{r}
+# g-d-rate model for treatment MTX_V1V2
+
+out_mtx_0 = gdrate(sub_dataframes$MTX_V1V2_0, 0.05, FALSE)
+out_mtx_1 = gdrate(sub_dataframes$MTX_V1V2_1, 0.05, FALSE)
+
+out_mtx_0$models
+out_mtx_1$models
+```
+
+```{r}
+cols_to_select = c("type", "selected", "name")
+
+gd1 = as.data.frame(out_mtx_0$allest[cols_to_select])
+gd2 = as.data.frame(out_mtx_1$allest[cols_to_select])
+
+# delete duplicated rows
+gd1 = gd1[!duplicated(gd1), ]
+gd2 = gd2[!duplicated(gd2), ]
+
+
+h0 = merge(sub_dataframes$MTX_V1V2_0, gd1, by = "name", all = TRUE)
+h1 = merge(sub_dataframes$MTX_V1V2_1, gd2, by = "name", all = TRUE)
+
+
+h0$date = as.Date(h0$date, origin = "1970-01-01")
+h1$date = as.Date(h1$date, origin = "1970-01-01")
+
+plot_data(h0)
+plot_data(h1)
+```
+
+```{r}
+# g-d-rate model for treatment IVI_V1V2
+
+out_ivi_0 = gdrate(sub_dataframes$IVIg_V1V2_0, 0.05, FALSE)
+out_ivi_1 = gdrate(sub_dataframes$IVIg_V1V2_1, 0.05, FALSE)
+
+out_ivi_0$models
+out_ivi_1$models
+```
+
+```{r}
+cols_to_select = c("type", "selected", "name")
+
+gd1 = as.data.frame(out_ivi_0$allest[cols_to_select])
+gd2 = as.data.frame(out_ivi_1$allest[cols_to_select])
+
+# delete duplicated rows
+gd1 = gd1[!duplicated(gd1), ]
+gd2 = gd2[!duplicated(gd2), ]
+
+
+h0 = merge(sub_dataframes$IVIg_V1V2_0, gd1, by = "name", all = TRUE)
+h1 = merge(sub_dataframes$IVIg_V1V2_1, gd2, by = "name", all = TRUE)
+
+
+h0$date = as.Date(h0$date, origin = "1970-01-01")
+h1$date = as.Date(h1$date, origin = "1970-01-01")
+
+plot_data(h0)
+plot_data(h1)
+```
+
+```{r}
+# g-d-rate model for treatment RTX_V1V2
+
+out_rtx_0 = gdrate(sub_dataframes$RTX_V1V2_0, 0.05, FALSE)
+out_rtx_1 = gdrate(sub_dataframes$RTX_V1V2_1, 0.05, FALSE)
+
+out_rtx_0$models
+out_rtx_1$models
+```
+
+```{r}
+cols_to_select = c("type", "selected", "name")
+
+gd1 = as.data.frame(out_rtx_0$allest[cols_to_select])
+gd2 = as.data.frame(out_rtx_1$allest[cols_to_select])
+
+# delete duplicated rows
+gd1 = gd1[!duplicated(gd1), ]
+gd2 = gd2[!duplicated(gd2), ]
+
+
+h0 = merge(sub_dataframes$RTX_V1V2_0, gd1, by = "name", all = TRUE)
+h1 = merge(sub_dataframes$RTX_V1V2_1, gd2, by = "name", all = TRUE)
+
+
+h0$date = as.Date(h0$date, origin = "1970-01-01")
+h1$date = as.Date(h1$date, origin = "1970-01-01")
+
+plot_data(h0)
+plot_data(h1)
+```
+
+
+```{r}
+# g-d-rate model for Immunosuppressant switch 
+
+swi_0 = gdrate(sub_dataframes$ISswitch_V1V2_0, 0.05, FALSE)
+swi_1 = gdrate(sub_dataframes$ISswitch_V1V2_1, 0.05, FALSE)
+
+swi_0$models
+swi_1$models
+```
+
+```{r}
+cols_to_select = c("type", "selected", "name")
+
+gd1 = as.data.frame(swi_0$allest[cols_to_select])
+gd2 = as.data.frame(swi_1$allest[cols_to_select])
+
+# delete duplicated rows
+gd1 = gd1[!duplicated(gd1), ]
+gd2 = gd2[!duplicated(gd2), ]
+
+
+h0 = merge(sub_dataframes$ISswitch_V1V2_0, gd1, by = "name", all = TRUE)
+h1 = merge(sub_dataframes$ISswitch_V1V2_1, gd2, by = "name", all = TRUE)
+
+
+h0$date = as.Date(h0$date, origin = "1970-01-01")
+h1$date = as.Date(h1$date, origin = "1970-01-01")
+
+plot_data(h0)
+plot_data(h1)
+```
+
+
