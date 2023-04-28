@@ -1,0 +1,294 @@
+---
+title: "mixed effect with treatment data"
+author: "Jiahao Tian"
+date: "2023-04-24"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(dplyr)
+library(readr)
+library(tumgr)
+library(minpack.lm)
+library(lme4) # for fitting mixed effects models
+library(lmerTest) # for calculating p-values
+```
+
+```{R}
+## creat treatment column
+
+Treat = read.table(
+  "~/Desktop/MS report/data/Data-selected 2/IIMQILD_221104_Box.csv", 
+  sep = ",", header = TRUE)
+## change column name for merge
+colnames(Treat)[which(names(Treat) == "Patient_ID")] = "SUBJID"
+
+# Create a new column called "treatment" that contains the treatment each ID took
+Treat <- Treat %>%
+  mutate(treatmentV1V2 = case_when(
+    HiPD_V1V2 == 1 ~ "HiPD_V1V2",
+    CsA_V1V2 == 1 ~ "CsA_V1V2",
+    CTX_V1V2 == 1 ~ "CTX_V1V2",
+    AZT_V1V2 == 1 ~ "AZT_V1V2",
+    Tac_V1V2 == 1 ~ "Tac_V1V2",
+    MMF_V1V2 == 1 ~ "MMF_V1V2",
+    MTX_V1V2 == 1 ~ "MTX_V1V2",
+    IVIg_V1V2 == 1 ~ "IVIg_V1V2",
+    RTX_V1V2 == 1 ~ "RTX_V1V2",
+    ISswitch_V1V2 == 1 ~ "ISswitch_V1V2",
+    TRUE ~ "No Treatment" # Default value if none of the treatments are taken
+  ))
+```
+
+
+```{r}
+## read data
+
+DF1 = read.table(
+  "~/Desktop/MS report/data/Data-selected/10083_IMQUAL_01Oct2021.csv", 
+  sep = ",", header = TRUE)
+
+DF2 = read.table(
+  "~/Desktop/MS report/data/Data-selected/10083_TEXTCAD_01Oct2021.csv",
+  sep = ",", header = TRUE)
+
+##merge
+DF1_merge = merge(DF1, Treat, by = 'SUBJID', all = TRUE)
+DF2_merge = merge(DF2, Treat, by = 'SUBJID', all = TRUE)
+```
+
+
+```{r}
+##extract needed variables
+
+d2 = DF1_merge %>% 
+  dplyr:: select(Age,
+                 Sex,
+                 contains("V1_WL_Q",ignore.case = TRUE), 
+                 contains("V2_WL_Q",ignore.case = TRUE),
+                 contains("V3_WL_Q",ignore.case = TRUE), 
+                 contains("_CTdate",ignore.case = TRUE), 
+                 contains("treatment",ignore.case = TRUE), 
+                 contains("SUBJID",ignore.case = TRUE), 
+                 contains("VISITDTN",ignore.case = TRUE),
+                 contains("SLICE",ignore.case = TRUE))
+
+qlf = DF2_merge %>% 
+  dplyr:: select(QILD,
+                 QLFCAD,
+                 Age,
+                 Sex,
+                 contains("V1_WL_Q",ignore.case = TRUE), 
+                 contains("V2_WL_Q",ignore.case = TRUE),
+                 contains("V3_WL_Q",ignore.case = TRUE), 
+                 contains("treatment",ignore.case = TRUE), 
+                 contains("SUBJID",ignore.case = TRUE), 
+                 contains("VISITDTN",ignore.case = TRUE),
+                 contains("_V1V2",ignore.case = TRUE),
+                 contains("REGI",ignore.case = TRUE))
+
+## change variable type
+
+d2$name = as.numeric(factor(d2$SUBJID, 
+                  levels=unique(d2$SUBJID)))
+qlf$name = as.numeric(factor(qlf$SUBJID, 
+                  levels=unique(qlf$SUBJID)))
+
+d2$SLICE_THICKNESS = as.numeric(d2$SLICE_THICKNESS)
+d2$SLICE_SPACING = as.numeric(d2$SLICE_SPACING)
+
+
+d2$date = as.Date(d2$VISITDTN, "%d%b%Y")
+d2$date = as.numeric(d2$date)
+
+qlf$date = as.Date(qlf$VISITDTN, "%d%b%Y")
+qlf$date = as.numeric(qlf$date)
+
+
+
+## change to 2d dim 
+## change name to size due to model requirment
+
+d2$size = d2$SLICE_THICKNESS * d2$SLICE_SPACING 
+#qlf$size = qlf$QILD
+
+
+#qlf$VISITDTN = strptime(qlf$VISITDTN, "%d%b%Y")
+#qlf$date = as.numeric(qlf$VISITDTN)
+
+#lapply(d2, function(x) {length(which(is.na(x)))})
+#lapply(qlf, function(x) {length(which(is.na(x)))})
+#d2 = na.omit(d2)
+
+## change to dataframe fro model use
+
+d2 = as.data.frame(d2)
+qlf = as.data.frame(qlf)
+```
+
+
+```{R}
+qlf1 = qlf[grep("WHOLE", qlf$REGION), , drop = FALSE]
+
+qlf1 %>%
+  ggplot() + 
+  geom_line(mapping = aes(date, QLFCAD, group = name, color=name)) + 
+  facet_wrap(~treatmentV1V2) + 
+  theme_bw()
+```
+
+
+```{r}
+summary(qlf)
+```
+
+```{r}
+str(qlf)
+```
+
+```{r}
+qlf22 = qlf %>% 
+  dplyr:: select(QILD,
+                 QLFCAD,
+                 Age,
+                 Sex,
+                 name,
+                 date,
+                 MCumPD_V1V2,
+                 HiPD_V1V2,
+                 CsA_V1V2,     
+                 CTX_V1V2,       
+                 AZT_V1V2,       
+                 Tac_V1V2,      
+                 MMF_V1V2,     
+                 MTX_V1V2,     
+                 IVIg_V1V2,    
+                 RTX_V1V2,   
+                 ISswitch_V1V2,
+                 contains("treatment",ignore.case = TRUE), 
+                 contains("REGI",ignore.case = TRUE))
+```
+
+
+```{r}
+# Load required packages
+library(lme4)
+
+# Load and prepare your data
+# Assume your dataset is stored in a data frame called "df"
+# Make sure the necessary variables are appropriately coded as factors or numerics
+# For example, assuming the "treatment" variable is categorical with 10 classes:
+# Convert tumor_region to a factor variable
+qlf22$REGION <- as.factor(qlf22$REGION)
+
+# Create dummy variables for tumor_region
+dummy_vars <- model.matrix(~ REGION - 1, data = qlf22)
+
+# Combine dummy variables with the original dataset
+qlf22 <- cbind(qlf22, dummy_vars)
+```
+
+```{R}
+qlf22$treatmentV1V2 <- as.factor(qlf22$treatmentV1V2)
+```
+
+```{r}
+str(qlf22)
+
+```
+
+```{r}
+plot(QLFCAD ~ treatmentV1V2, data=qlf22)
+hist(qlf22$QLFCAD)
+hist(qlf22$Age)
+hist(qlf22$date)
+hist(qlf$V12_WL_dQLF)
+```
+
+```{r}
+qlf22$logqlf = log(qlf22$QLFCAD + 0.001)
+qlf22$logqild = log(qlf22$QILD)
+qlf22$logdate = log(qlf22$date)
+
+```
+
+
+```{R}
+#qlf$[is.na(df$x)] <- 0
+
+# Fit a mixed-effects linear regression model
+model = lmer(logqild ~ HiPD_V1V2 +
+                 CsA_V1V2 +    
+                 CTX_V1V2 +      
+                 AZT_V1V2 +       
+                 Tac_V1V2 +     
+                 MMF_V1V2 +     
+                 MTX_V1V2 +     
+                 IVIg_V1V2 +    
+                 RTX_V1V2 +   
+                 ISswitch_V1V2 + REGION + (1 | name), data = qlf22)
+
+# Get summary of the model
+summary(model)
+
+# Get confidence intervals of fixed effects
+#confint(model)
+
+
+
+```
+
+
+
+
+```{r}
+library(pbkrtest)
+model2 = lmer(logqlf ~ logdate + REGION + (1 + logdate | name), data = qlf22, REML = TRUE)
+KRmodcomp(model, model2)
+
+
+```
+
+
+```{r}
+library(broom.mixed) 
+(diagd <- augment(model))
+
+
+```
+
+
+
+```{r}
+library(broom.mixed) 
+(diagd <- augment(model))
+
+
+```
+
+
+```{R}
+diagd %>%
+  ggplot(mapping = aes(sample = .resid)) + 
+  stat_qq() + 
+  theme_bw()
+
+```
+
+
+```{r}
+diagd %>%
+  ggplot() + 
+  geom_point(mapping = aes(x = .fitted, y = .resid), alpha = 0.3) +
+  geom_hline(yintercept = 0) + 
+  labs(x = "Fitted", ylab = "Residuals")
+
+```
+```{r}
+model = lmer(logqlf ~ logdate + treatmentV1V2 + REGION + (1 + logdate | name), data = qlf22)
+summary(model)
+AIC(model)
+```
+

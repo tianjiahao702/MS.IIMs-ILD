@@ -1,0 +1,180 @@
+---
+title: "mixed effect"
+author: "Jiahao Tian"
+date: "2023-04-17"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(dplyr)
+library(readr)
+library(tumgr)
+library(minpack.lm)
+```
+
+```{r}
+## read data
+
+DF1 = read.table(
+  "~/Desktop/MS report/data/Data-selected/10083_IMQUAL_01Oct2021.csv", 
+  sep = ",", header = TRUE)
+
+DF2 = read.table(
+  "~/Desktop/MS report/data/Data-selected/10083_TEXTCAD_01Oct2021.csv",
+  sep = ",", header = TRUE)
+
+## extract needed variables for model
+
+d2 = DF1 %>% 
+  dplyr:: select(contains("SUBJID",ignore.case = TRUE), 
+                 contains("VISITDTN",ignore.case = TRUE),
+                 contains("SLICE",ignore.case = TRUE))
+
+qlf = DF2 %>% 
+  dplyr:: select(contains("SUBJID",ignore.case = TRUE), 
+                 contains("VISITDTN",ignore.case = TRUE),
+                 contains("REGI",ignore.case = TRUE), 
+                 contains("QLF",ignore.case = TRUE))
+
+## change variable type
+
+d2$name = as.numeric(factor(d2$SUBJID, 
+                  levels=unique(d2$SUBJID)))
+qlf$name = as.numeric(factor(qlf$SUBJID, 
+                  levels=unique(qlf$SUBJID)))
+
+d2$SLICE_THICKNESS = as.numeric(d2$SLICE_THICKNESS)
+d2$SLICE_SPACING = as.numeric(d2$SLICE_SPACING)
+
+
+## change to 2d dim 
+## change name to size due to model requirment
+
+d2$SLICE_2D = d2$SLICE_THICKNESS * d2$SLICE_SPACING 
+
+
+## check and delet missing value
+
+lapply(d2, function(x) {length(which(is.na(x)))})
+lapply(qlf, function(x) {length(which(is.na(x)))})
+d2 = na.omit(d2)
+
+
+## change time to day due model requirement
+
+d2$VISITDTN = as.Date(d2$VISITDTN, "%d%b%Y")
+d2$date = as.numeric(d2$VISITDTN)
+
+qlf$VISITDTN = as.Date(qlf$VISITDTN, "%d%b%Y")
+qlf$date = as.numeric(qlf$VISITDTN)
+
+
+## change to dataframe fro model use
+
+d2 = as.data.frame(d2)
+qlf = as.data.frame(qlf)
+```
+```{r}
+qlf1 = qlf %>% 
+  dplyr:: select(contains("name",ignore.case = TRUE), 
+                 contains("REGION",ignore.case = TRUE), 
+                 contains("QLF",ignore.case = TRUE))
+
+qlf1 %>%
+  ggplot() +
+  geom_point(mapping = aes(x = name, y = QLFCAD, color = REGION))
+```
+
+
+
+
+```{r}
+library(lme4) # for fitting mixed effects models
+library(lmerTest) # for calculating p-values
+
+
+# patient_id (categorical), tumor_region (categorical), tumor_size (numerical), date (numerical)
+
+# Convert tumor_region to a factor variable
+qlf$REGION <- factor(qlf$REGION)
+
+# Create dummy variables for tumor_region
+dummy_vars <- model.matrix(~ REGION - 1, data = qlf)
+
+# Combine dummy variables with the original dataset
+qlf <- cbind(qlf, dummy_vars)
+
+# Fit the mixed effects model
+#model1 <- lmer(QLFCAD ~ date + dummy_vars + (1 | name), data = qlf, REML = TRUE)
+model1 <- lmer(QLFCAD ~ REGION + date + (1 | name), data = qlf)
+
+
+
+# Print the summary of the model
+summary(model1)
+```
+
+```{r}
+qqnorm(residuals(model1), main = "")
+
+plot(fitted(model1), residuals(model1))
+abline(h = 0)
+```
+
+
+
+```{R}
+# Load the necessary package
+library(ggplot2)
+
+# Fit a GLM with a log link function and a Gaussian distribution
+library(geepack)
+
+# Fit a GEE model with an exchangeable correlation structure
+gee_model <- geeglm(QLFCAD ~ REGION + date, id = name, data = qlf, family = gaussian, corstr = "exchangeable")
+
+# Print the summary of the model
+summary(gee_model)
+```
+
+
+
+```{r}
+
+# Check the residual vs. fitted plot
+plot(fitted(gee_model), resid(gee_model), ylab = "Residuals", xlab = "Fitted Values")
+abline(h = 0, col = "red")
+
+# Check for nonlinearity by adding quadratic terms of predictors
+gee_model2 <- geeglm(QLFCAD ~ REGION + date + I(date^2),
+                     id = name, corstr = "exchangeable", data = qlf)
+plot(fitted(gee_model2), resid(gee_model2), ylab = "Residuals", xlab = "Fitted Values")
+abline(h = 0, col = "red")
+
+# Check for heteroscedasticity by using a weighted GEE model
+
+qqnorm(residuals(gee_model), main = "")
+```
+
+
+```{R}
+library(mgcv)
+
+# Fit a GAM model
+gam_model <- gam(QLFCAD ~ s(date, by = name) + dummy_vars, data = qlf)
+
+# Summarize the model
+summary(gam_model)
+
+# Plot the model
+plot(gam_model, residuals = TRUE)
+```
+
+
+```{r}
+gam_check <- gam.check(gam_model)
+par(mfrow = c(2, 2))
+plot(gam_check, pages = 1)
+```

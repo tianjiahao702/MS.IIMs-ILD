@@ -1,0 +1,488 @@
+---
+title: "mixture k-means with treatments"
+author: "Jiahao Tian"
+date: "2023-04-22"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(dplyr)
+library(readr)
+library(tumgr)
+library(minpack.lm)
+library(mclust)
+```
+
+```{r}
+## Missed patien 58 data points, added here.
+
+Treat = read.table(
+  "~/Desktop/MS report/data/Data-selected 2/IIMQILD_221104_Box.csv", 
+  sep = ",", header = TRUE)
+
+# add missing observation for 58
+# Create a new observation as a data frame
+#new_observation = data.frame(Patient_ID = "10083_SNUH_P24", V1_WL_QLF = 2.1,
+                              #V1_CTdate = "5-Sep-13", Age = 47,
+                              #V1_WL_QILD = 21.7)
+
+# Add NA values for missing columns in the new observation
+#if (length(colnames(new_observation)) < length(colnames(Treat))) {
+ # missing_cols = setdiff(colnames(Treat), colnames(new_observation))
+  #for (col in missing_cols) {
+   # new_observation[[col]] = NA
+  #}
+#}
+
+# Identify the row where need to add the new observation
+#row_index = 58
+
+# Add the new observation to the specific row using row indexing
+#Treat = rbind(Treat[1:(row_index-1), ], 
+ #             new_observation, Treat[row_index:nrow(Treat), ])
+
+# Reset row names to reflect the new row addition
+#rownames(Treat) = NULL
+
+## change column name for merge
+colnames(Treat)[which(names(Treat) == "Patient_ID")] = "SUBJID"
+
+Treat$name = as.numeric(factor(Treat$SUBJID, 
+                  levels=unique(Treat$SUBJID)))
+```
+
+
+```{r}
+## read data
+
+DF1 = read.table(
+  "~/Desktop/MS report/data/Data-selected/10083_IMQUAL_01Oct2021.csv", 
+  sep = ",", header = TRUE)
+
+DF2 = read.table(
+  "~/Desktop/MS report/data/Data-selected/10083_TEXTCAD_01Oct2021.csv",
+  sep = ",", header = TRUE)
+
+##merge
+#DF1_merge = merge(DF1, Treat, by = 'SUBJID', all = TRUE)
+#DF2_merge = merge(DF2, Treat, by = 'SUBJID', all = TRUE)
+
+
+##extract needed variables
+
+d2 = DF1 %>% 
+  dplyr:: select(contains("SUBJID",ignore.case = TRUE), 
+                 contains("VISITDTN",ignore.case = TRUE),
+                 contains("SLICE",ignore.case = TRUE))
+
+qlf = DF2 %>% 
+  dplyr:: select(QILD,
+                 contains("SUBJID",ignore.case = TRUE), 
+                 contains("VISITDTN",ignore.case = TRUE),
+                 contains("REGI",ignore.case = TRUE), 
+                 contains("QLF",ignore.case = TRUE))
+
+## change variable type
+
+d2$name = as.numeric(factor(d2$SUBJID, 
+                  levels=unique(d2$SUBJID)))
+qlf$name = as.numeric(factor(qlf$SUBJID, 
+                  levels=unique(qlf$SUBJID)))
+
+d2$SLICE_THICKNESS = as.numeric(d2$SLICE_THICKNESS)
+d2$SLICE_SPACING = as.numeric(d2$SLICE_SPACING)
+
+# only use whole lung data for g-d-rate model
+
+qlf = qlf[grep("WHOLE", qlf$REGION), , drop = FALSE]
+
+## change to 2d dim 
+## change name to size due to model requirment
+
+d2$size = d2$SLICE_THICKNESS * d2$SLICE_SPACING 
+qlf$size = qlf$QLFCAD
+
+
+## check and delet missing value
+
+## no need for delet missing value here
+
+#lapply(d2, function(x) {length(which(is.na(x)))})
+#lapply(qlf, function(x) {length(which(is.na(x)))})
+#d2 = na.omit(d2)
+
+## change to dataframe fro model use
+
+d2 = as.data.frame(d2)
+qlf = as.data.frame(qlf)
+```
+
+
+
+```{r}
+# Subset the data to only contain visit 1(baseline)
+treat1 = Treat[, c("name", "V1_CTdate", "V1_WL_QLF", "Age", "Sex", "V1_WL_QILD")]
+
+# Check for missing values in your dataset
+if (sum(is.na(treat1)) > 0) {
+  # Handle missing values ( remove rows or impute missing values)
+  treat1 = na.omit(treat1) #remove rows with missing values
+}
+
+treat1$V1_CTdate = as.Date(treat1$V1_CTdate, format = "%d-%b-%y")
+treat1$V1_CTdate = as.numeric(treat1$V1_CTdate)
+```
+
+
+```{r}
+# Perform Bayesian EM clustering using the prior distribution and specifying 4 groups
+
+set.seed(1111)
+
+# defaul prior with 0 and 1
+results = Mclust(treat1)
+
+# use a normal prior on the mean (conditional on the variance) and use an inverse gamma prior on the variance.
+# Which now the prior infor is based on current dataset
+results1 = Mclust(treat1, prior = priorControl())
+
+
+# View the clustering results
+# Plot the clustering results
+plot(results)
+plot(results1)
+```
+
+
+
+```{r}
+set.seed(1111)
+
+# defaul prior with 0 and 1
+results = Mclust(treat1, G = 4)
+
+# use a normal prior on the mean (conditional on the variance) and use an inverse gamma prior on the variance.
+# Which now the prior infor is based on current dataset
+results1 = Mclust(treat1, G = 4, prior = priorControl())
+
+
+# View the clustering results
+# Plot the clustering results
+plot(results)
+plot(results1)
+```
+
+
+
+```{r}
+
+# Extract the cluster assignments from the mclust_results object
+cluster_assignments = results1$classification
+
+data = as.data.frame(treat1)
+
+# Add the cluster assignments to the dataframe
+data$Cluster = as.character(cluster_assignments)
+
+library(ggplot2)
+library(ggforce)
+
+ggplot(data, aes(x = V1_WL_QLF, y = Cluster, color = Cluster)) +
+  geom_point() +  
+  geom_circle(aes(x0 = V1_WL_QLF, y0 = Cluster, r = 0.1), 
+              fill = NA, color = "black") +  
+  labs(x = "QLF Score", y = "Cluster") +  
+  theme_minimal() +  
+  scale_color_discrete(name = "Cluster") 
+
+```
+
+
+
+```{r}
+## meanningless no need
+
+data$QLF_Change = data$V1_WL_QLF - ave(data$V1_WL_QLF, data$Cluster,
+                                        FUN = function(x) x[1])
+
+# Create the plot
+ggplot(data, aes(x = V1_WL_QLF, y = QLF_Change, color = Cluster)) +
+  geom_point() +  
+  geom_circle(aes(x0 = V1_WL_QLF, y0 = QLF_Change, r = 0.1), 
+              fill = NA, color = "black", linewidth = 1) +  
+  labs(x = "QLF Score", y = "Change in QLF Score") +  
+  theme_minimal() +  
+  scale_color_discrete(name = "Cluster") 
+
+```
+
+
+```{r}
+## meaningless no need
+ggplot(data, aes(x = V1_WL_QLF, y = Age)) +
+  geom_circle(aes(x0 = V1_WL_QLF, y0 = Age, r = 0.1, 
+                  color = Cluster), fill = NA, linewidth = 1) +
+  labs(x = "QLF Score", y = "Age", title = "Group Comparison") +
+  theme_minimal() +
+  facet_wrap(~ Cluster, ncol = 2, scales = "free") +
+  scale_color_discrete(name = "Cluster")
+
+```
+
+
+```{r}
+## meaningless no need
+
+summary_stats = data %>%
+  group_by(Cluster) %>%
+  summarise(QLF_mean = mean(V1_WL_QLF, na.rm = TRUE),
+            mc_mean = mean(MCumPD_V1V2, na.rm = TRUE))
+
+ggplot(summary_stats, aes(x = QLF_mean, y = mc_mean, fill = Cluster)) +
+  geom_circle(aes(r = 0.1, x0 = QLF_mean, y0 = mc_mean), color = "black") +
+  scale_fill_discrete(name = "Cluster") +
+  labs(x = "QLF Score", y = "Change in QLF Score", title = "Group Comparison") +
+  theme_minimal()
+
+```
+
+
+```{r}
+cluster_membership = results1$classification
+
+# Filter out non-finite values
+data_finite = treat1[is.finite(treat1$V1_WL_QLF), ]
+data_finite = treat1[is.finite(treat1$V1_CTdate), ]
+
+mclust2Dplot(data = data_finite[, c("V1_WL_QLF", "V1_WL_QILD")], 
+             classification = cluster_membership, 
+             xlab = "QLF", main = "2D Plot of Clustering Results")
+
+
+```
+
+```{r}
+cluster_membership = results1$classification
+
+# Filter out non-finite values
+data_finite = treat1[is.finite(treat1$V1_WL_QLF), ]
+
+mclust2Dplot(data = data_finite[, c("V1_WL_QLF", "name")], 
+             classification = cluster_membership, 
+             xlab = "QLF", main = "2D Plot of Clustering Results")
+
+
+```
+
+```{r}
+library(scatterplot3d)
+
+# Extract the cluster membership from the results
+cluster_membership = results1$classification
+
+# Select three variables to use for the 3D plot
+vars = c("V1_WL_QLF", "name", "V1_CTdate")
+
+# Create a 3D scatter plot of the clustering results
+scatterplot3d(data_finite[, vars], pch = cluster_membership, color = cluster_membership, 
+              xlab = vars[1], ylab = vars[2], zlab = vars[3], 
+              main = "3D Plot of Clustering Results")
+```
+
+
+```{r}
+cluster_membership = results1$classification
+
+plot(data_finite[, c("name", "V1_WL_QLF")], 
+     col = cluster_membership, 
+     pch = cluster_membership,
+     main = "Cluster Analysis Results")
+legend("topright", legend = unique(cluster_membership), 
+       col = unique(cluster_membership), 
+       pch = unique(cluster_membership), 
+       title = "Clusters")
+```
+
+
+
+```{r}
+library(factoextra)
+
+set.seed(1111)
+#fviz_mclust(results1, "classification") 
+#fviz_mclust(results1, "uncertainty")
+fviz_mclust(results, "classification") 
+fviz_mclust(results1, "classification") 
+```
+
+
+###################### creat data set
+
+```{r}
+# Create separate data frames for each cluster
+cluster_membership = results1$classification
+
+num_clusters = max(cluster_membership)
+cluster_data = list()
+for (i in 1:num_clusters) {
+  cluster_data[[i]] = treat1[cluster_membership == i, ]
+  cat("Cluster", i, "has", nrow(cluster_data[[i]]), "members.\n")
+}
+```
+
+
+```{r}
+
+clusters = cc
+  # Cluster labels for each data point
+
+# Create new datasets for each cluster
+data_cluster1 = treat1[clusters == 1, ]
+data_cluster2 = treat1[clusters == 2, ]
+data_cluster3 = treat1[clusters == 3, ]
+data_cluster4 = treat1[clusters == 4, ]
+
+# Print the number of subjects in each cluster
+cat("Number of data points in Cluster 1:", nrow(data_cluster1), "\n")
+cat("Number of data points in Cluster 2:", nrow(data_cluster2), "\n")
+cat("Number of data points in Cluster 3:", nrow(data_cluster3), "\n")
+cat("Number of data points in Cluster 4:", nrow(data_cluster4), "\n")
+```
+
+```{r}
+## merge date
+data_cluster1 = merge(data_cluster1, qlf, by = 'name', all = FALSE)
+data_cluster2 = merge(data_cluster2, qlf, by = 'name', all = FALSE)
+data_cluster3 = merge(data_cluster3, qlf, by = 'name', all = FALSE)
+data_cluster4 = merge(data_cluster4, qlf, by = 'name', all = FALSE)
+
+
+## change time due model requirement
+
+data_cluster1$date = as.Date(data_cluster1$VISITDTN, "%d%b%Y")
+data_cluster1$date = as.numeric(data_cluster1$date)
+
+data_cluster2$date = as.Date(data_cluster2$VISITDTN, "%d%b%Y")
+data_cluster2$date = as.numeric(data_cluster2$date)
+
+data_cluster3$date = as.Date(data_cluster3$VISITDTN, "%d%b%Y")
+data_cluster3$date = as.numeric(data_cluster3$date)
+
+data_cluster4$date = as.Date(data_cluster4$VISITDTN, "%d%b%Y")
+data_cluster4$date = as.numeric(data_cluster4$date)
+
+## extract needed variables for model
+
+data_cluster1 = data_cluster1 %>% 
+  dplyr:: select(date,
+                 contains("name",ignore.case = TRUE), 
+                 contains("size",ignore.case = TRUE))
+
+data_cluster2 = data_cluster2 %>% 
+  dplyr:: select(date,
+                 contains("name",ignore.case = TRUE), 
+                 contains("size",ignore.case = TRUE))
+
+data_cluster3 = data_cluster3 %>% 
+  dplyr:: select(date,
+                 contains("name",ignore.case = TRUE), 
+                 contains("size",ignore.case = TRUE))
+
+data_cluster4 = data_cluster4 %>% 
+  dplyr:: select(date,
+                 contains("name",ignore.case = TRUE), 
+                 contains("size",ignore.case = TRUE))
+
+
+## change to dataframe for model use
+
+data_cluster1 = as.data.frame(data_cluster1)
+data_cluster2 = as.data.frame(data_cluster2)
+data_cluster3 = as.data.frame(data_cluster3)
+data_cluster4 = as.data.frame(data_cluster4)
+```
+
+
+```{r}
+## run model
+
+out_clust1 = gdrate(data_cluster1, 0.05, FALSE)
+out_clust2 = gdrate(data_cluster2, 0.05, FALSE)
+out_clust3 = gdrate(data_cluster3, 0.05, FALSE)
+out_clust4 = gdrate(data_cluster4, 0.05, FALSE)
+
+
+out_clust1$models
+out_clust2$models
+out_clust3$models
+out_clust4$models
+```
+
+
+```{r}
+## creat another data for summery
+
+cols_to_select = c("type", "selected", "name")
+
+gd1 = as.data.frame(out_clust1$allest[cols_to_select])
+gd2 = as.data.frame(out_clust2$allest[cols_to_select])
+gd3 = as.data.frame(out_clust3$allest[cols_to_select])
+gd4 = as.data.frame(out_clust4$allest[cols_to_select])
+
+# delete duplicated rows
+gd1 = gd1[!duplicated(gd1), ]
+gd2 = gd2[!duplicated(gd2), ]
+gd3 = gd3[!duplicated(gd3), ]
+gd4 = gd4[!duplicated(gd4), ]
+
+# combine date
+data_cluster1 = merge(data_cluster1, gd1, by = "name", all = TRUE)
+data_cluster2 = merge(data_cluster2, gd2, by = "name", all = TRUE)
+data_cluster3 = merge(data_cluster3, gd3, by = "name", all = TRUE)
+data_cluster4 = merge(data_cluster4, gd4, by = "name", all = TRUE)
+
+## change time back to d-m-y
+
+data_cluster1$date = as.Date(data_cluster1$date, origin = "1970-01-01")
+
+data_cluster2$date = as.Date(data_cluster2$date, origin = "1970-01-01")
+
+data_cluster3$date = as.Date(data_cluster3$date, origin = "1970-01-01")
+
+data_cluster4$date = as.Date(data_cluster4$date, origin = "1970-01-01")
+
+```
+
+
+
+```{R}
+# Define a function to generate the plot
+plot_data = function(data) {
+
+    # Create a new plot
+  plot = ggplot(data, aes(x = date, y = size, group = name, color = selected)) +
+    geom_point(size = 1) +
+    geom_line() +
+    labs(x = "date", y = "QLF") +
+    theme_minimal() +
+    theme(legend.position = "top")
+  
+  # Add text labels for name on each line
+  plot = plot + geom_text(aes(label = name), vjust = -0.5, hjust = 1,
+                          size = 2, color = "black")
+  
+  return(plot)
+}
+
+# List datasets
+datasets = list(data_cluster1, data_cluster2, data_cluster3, data_cluster4)
+
+# Loop through the datasets and generate the plots
+for (i in 1:length(datasets)) {
+  print(paste("Plot for dataset", i))
+  print(plot_data(datasets[[i]]))
+}
+
+```

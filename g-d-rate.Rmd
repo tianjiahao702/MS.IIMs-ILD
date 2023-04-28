@@ -242,8 +242,8 @@ qlf$date = as.Date(qlf$VISITDTN, format = "%d%b%Y")
 qlf$date = as.numeric(qlf$date)
 
 
-as.data.frame(qlf)
-as.data.frame(d2)
+qlf = as.data.frame(qlf)
+d2 = as.data.frame(d2)
 
 ```
 

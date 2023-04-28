@@ -1,0 +1,248 @@
+---
+title: "bayes liner regression"
+author: "Jiahao Tian"
+date: "2023-04-26"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+- The Bayesian analysis (with a noninformative prior)
+
+```{r}
+qlf = read.table(
+  "~/Desktop/MS report/data/Data-selected 2/IIMQILD_221104_Box.csv", 
+  sep = ",", header = TRUE)
+## change column name for merge
+colnames(qlf)[which(names(qlf) == "Patient_ID")] = "SUBJID"
+
+
+
+
+qlf = as.data.frame(qlf)
+
+```
+
+
+```{r}
+dat = na.omit(qlf22)
+
+
+library("rjags")
+
+mod2_string = " model {
+    for (i in 1:length(y)) {
+        y[i] ~ dnorm(mu[i], prec)
+        mu[i] = b[1] + b[2]*log_date[i] + b[3]*treatment[i] + b[4]*REgion[i]
+    }
+    
+    for (i in 1:4) {
+        b[i] ~ dnorm(0.0, 1.0/1.0e6)
+    }
+    
+    prec ~ dgamma(5/2.0, 5*10.0/2.0)
+    sig = sqrt( 1.0 / prec )
+} "
+
+
+set.seed(73)
+data2_jags = list(y=dat$logqlf, log_date=dat$logdate,
+                  treatment=as.numeric(dat$treatmentV1V2),
+                  REgion=as.numeric(dat$REGION))
+
+params2 = c("b", "sig")
+
+inits2 = function() {
+    inits = list("b"=rnorm(4,0.0,100.0), "prec"=rgamma(1,1.0,1.0))
+}
+
+mod2 = jags.model(textConnection(mod2_string), data=data2_jags, inits=inits2, n.chains=3)
+update(mod2, 1000) # burn-in
+
+mod2_sim = coda.samples(model=mod2,
+                        variable.names=params2,
+                        n.iter=5000)
+
+mod2_csim = as.mcmc(do.call(rbind, mod2_sim)) # combine multiple chains
+
+```
+
+
+```{r}
+plot(mod2_sim)
+
+
+```
+
+
+```{r}
+gelman.diag(mod2_sim)
+autocorr.diag(mod2_sim)
+
+autocorr.plot(mod2_sim)
+
+```
+
+
+```{r}
+summary(mod2_sim)
+
+
+```
+
+
+```{r}
+X = cbind(rep(1, length(data2_jags)), data2_jags$log_date, data2_jags$treatment, data2_jags$REgion)
+
+head(X)
+
+(pm_params2 = colMeans(mod2_csim)) # posterior mean
+
+yhat2 = drop(X %*% pm_params2[1:4])
+resid2 = data2_jags$y - yhat2
+plot(resid2)
+```
+
+
+```{r}
+plot(yhat2, resid2) # against predicted values
+
+
+```
+
+
+```{r}
+sd(resid2) # standard deviation of residuals
+
+```
+
+
+
+```{r}
+library("rjags")
+
+mod_string = " model {
+  for (i in 1:length(y)) {
+    y[i] ~ dnorm(mu[i], prec)
+    mu[i] = a[treatment[i]] + b[1]*log_date[i] + b[2]*REgion[i]
+  }
+  
+  for (j in 1:max(treatment)) {
+    a[j] ~ dnorm(a0, prec_a)
+  }
+  
+  a0 ~ dnorm(0.0, 1.0/1.0e6)
+  prec_a ~ dgamma(1/2.0, 1*10.0/2.0)
+  tau = sqrt( 1.0 / prec_a )
+  
+  for (j in 1:2) {
+    b[j] ~ dnorm(0.0, 1.0/1.0e6)
+  }
+  
+  prec ~ dgamma(5/2.0, 5*10.0/2.0)
+  sig = sqrt( 1.0 / prec )
+} "
+
+set.seed(73)
+data_jags = list(y=dat$logqlf, 
+                 log_date=dat$logdate,
+                 treatment=as.numeric(dat$treatmentV1V2),
+                 REgion=as.numeric(dat$REGION))
+
+data_jags$REgion
+table(data_jags$REgion, data_jags$treatment)
+
+params = c("a0", "a", "b", "sig", "tau")
+
+mod = jags.model(textConnection(mod_string), data=data_jags, n.chains=3)
+update(mod, 1e3) # burn-in
+
+mod_sim = coda.samples(model=mod,
+                       variable.names=params,
+                       n.iter=5e3)
+
+mod_csim = as.mcmc(do.call(rbind, mod_sim)) # combine multiple chains
+
+```
+
+```{r}
+
+plot(mod_sim)
+
+
+
+```
+
+
+
+```{r}
+gelman.diag(mod_sim)
+autocorr.diag(mod_sim)
+autocorr.plot(mod_sim)
+effectiveSize(mod_sim)
+
+
+
+```
+
+
+
+```{r}
+summary(mod_sim)
+
+
+
+
+```
+
+
+
+```{r}
+
+dic.samples(mod, n.iter=1e3)
+
+
+
+```
+
+
+#############
+- bayes hierarchical model
+
+```{r}
+library(brms)
+
+# Create a model formula
+formula <- bf(V12_WL_dQLF ~ HiPD_V1V2 + HiPD_V1V2 +
+                 CsA_V1V2 +    
+                 CTX_V1V2 +      
+                 AZT_V1V2 +       
+                 Tac_V1V2 +     
+                 MMF_V1V2 +     
+                 MTX_V1V2 +     
+                 IVIg_V1V2 +    
+                 RTX_V1V2 +   
+                 ISswitch_V1V2 + Sex + Age + (1 | SUBJID), 
+              family = gaussian())
+
+
+
+# Fit the Bayesian multilevel model
+bayesian_model <- brm(formula = formula, 
+                      data = qlf,
+                      family = gaussian(),
+                      control = list(adapt_delta = 0.95),
+                      cores = 4,
+                      iter = 2000,
+                      warmup = 1000,
+                      seed = 12345)
+
+# Display the summary of the model
+summary(bayesian_model)
+
+
+
+
+```

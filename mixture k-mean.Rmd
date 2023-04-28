@@ -12,179 +12,63 @@ library(dplyr)
 library(readr)
 library(tumgr)
 library(minpack.lm)
-```
-
-
-```{r}
-DF1 = read_csv("~/Desktop/MS report/data/Data-selected/10083_IMQUAL_01Oct2021.csv")
-DF2 = read_csv("~/Desktop/MS report/data/Data-selected/10083_TEXTCAD_01Oct2021.csv")
-```
-
-
-```{r}
-d2 = DF1 %>% 
-  dplyr:: select(contains("SUBJID",ignore.case = TRUE), 
-                 contains("VISITDTN",ignore.case = TRUE),
-                 contains("SLICE",ignore.case = TRUE))
-
-qlf = DF2 %>% 
-  dplyr:: select(contains("SUBJID",ignore.case = TRUE), 
-                 contains("VISITDTN",ignore.case = TRUE),
-                 contains("REGI",ignore.case = TRUE), 
-                 contains("QLF",ignore.case = TRUE))
-```
-
-
-```{R}
-d2$name = as.numeric(factor(d2$SUBJID, 
-                  levels=unique(d2$SUBJID)))
-qlf$name = as.numeric(factor(qlf$SUBJID, 
-                  levels=unique(qlf$SUBJID)))
-
-d2$SLICE_THICKNESS = as.numeric(d2$SLICE_THICKNESS)
-d2$SLICE_SPACING = as.numeric(d2$SLICE_SPACING)
-
-qlf = qlf[grep("WHOLE", qlf$REGION), , drop = FALSE]
-```
-
-
-```{r}
-d2$size = d2$SLICE_THICKNESS * d2$SLICE_SPACING 
-
-qlf$size = (qlf$QLFCAD * 5014) / 100
-```
-
-
-```{r}  
-lapply(d2, function(x) {length(which(is.na(x)))})
-lapply(qlf, function(x) {length(which(is.na(x)))})
-d2 = na.omit(d2)
-```
-
-
-```{r}
-d2$VISITDTN = strptime(d2$VISITDTN, "%d%b%Y")
-d2$date = as.numeric(d2$VISITDTN)
-
-qlf$date = strptime(qlf$VISITDTN, "%d%b%Y")
-qlf$date = as.numeric(qlf$date)
-```
-
-```{r}
-d2 = d2 %>% 
-  dplyr:: select(contains("name",ignore.case = TRUE), 
-                 #contains("date",ignore.case = TRUE),
-                 contains("size",ignore.case = TRUE))
-
-qlf = qlf %>% 
-  dplyr:: select(contains("name",ignore.case = TRUE), 
-                 #contains("date",ignore.case = TRUE),
-                 contains("size",ignore.case = TRUE))
+library(mvtnorm)
 
 ```
 
-```{r}
-d2 = as.data.frame(d2)
-qlf = as.data.frame(qlf)
-```
 
-
-```{r}
-library(mclust)
-
-results <- Mclust(qlf$size)
-
-# View the clustering results
-(results$classification)
-
-plot(results, what = c("classification"))
-
-
-```
-
+- Implementation of the Gaussian Mixture Model (GMM) with Expectation-Maximization (EM). 
+- Find the maximum likelihood estimates for the parameters of the mixture model, given the data.
+- Estimates different variances for each cluster
 
 ```{r}
 ## Using mixture models for clustering in the dataset
 ## Compare k-means clustering and a location and scale mixture model with K normals
 
-### Loading data and setting up global variables
-library(mclust)
-library(mvtnorm)
-
-### Defining a custom function to create pair plots
-
-pairs2 = function(x, col="black", pch=16, labels=NULL, names = colnames(x)){
-  n = dim(x)[1]
-  p = dim(x)[1]
-  par(mfrow=c(p,p))
-  for(k in 1:p){
-    for(l in 1:p){
-      if(k!=l){
-        par(mar=c(1,1,1,1))
-        plot(x[,k], x[,l], type="n", xlab="", ylab="")
-        if(is.null(labels)){
-          points(x[,k], x[,l], pch=pch, col=col)
-        }else{
-          text(x[,k], x[,l], labels=labels, col=col)
-        }
-      }else{
-        plot(seq(0,5), seq(0,5), type="n", xlab="", ylab="", axes=FALSE)
-        text(1,1,names[k], cex=1.2)
-      }
-    }
-  }
-}
+## Standardize the data
+x_std = scale(treat1)
 
 ## Setup data
-x       = as.matrix(qlf[,-5])
+x       = x_std
 n       = dim(x)[1]
-p       = dim(x)[1]       # Number of features
+p       = dim(x)[2]       # Number of features
 KK      = 4
 epsilon = 0.0000001
 par(mfrow=c(1,1))
-#par(mfcol=c(1,1),mai=c(0.5,0.5,0.5,0))
-par(mar=c(1,1,1,1))
-colscale = c("black","blue","red","yellow")
-shortnam  = c("dx","dg","gx","dgpi")
-par(fig=c(0, 0.8, 0, 0.8))
-pairs2(x, col=colscale[qlf[,5]],pch=1, labels=shortnam[as.numeric(qlf[,5])])
-```
-
-
-```{r}
-## Setup data
-x       = as.matrix(qlf[,-5])
-n       = dim(x)[1]
-p       = dim(x)[1]       # Number of features
-KK      = 4
-epsilon = 0.0000001
+par(mar=c(4,4,1,1))
+colscale = c("black","blue","red", "yellow")
+shortnam  = c("1","2","3", "4")
 
 # Initialize the parameters of the algorithm
 set.seed(63252)
-numruns = 15
+numruns = 50
 v.sum   = array(0, dim=c(numruns, n, KK))
 QQ.sum  = rep(0, numruns)
-```
 
-```{r}
+x[is.na(x)] = colMeans(x, na.rm = TRUE)[col(x)[is.na(x)]]
+
+
+# Within each run, the algorithm iterates through the following steps until convergence
 for(ss in 1:numruns){
-  w   = rep(1,KK)/KK  #Assign equal weight to each component to start with
-  mu  = rmvnorm(KK, apply(x,2,mean), 3*var(x))   #Cluster centers randomly spread over the support of the data
-  Sigma      = array(0, dim=c(KK,p,p))  #Initial variances are assumed to be the same
-  Sigma[1,,] = var(x)
-  Sigma[2,,] = var(x)
-  Sigma[3,,] = var(x)
-  Sigma[4,,] = var(x)
-
+  w = rep(1,KK)/KK  #Assign equal weight to each component to start with
+  #kmeans_init = kmeans(x, centers = KK, algorithm = "Lloyd", nstart = 1)  #Initialize mu using k-means++ algorithm
+  #mu = kmeans_init$centers
+  mu = rmvnorm(KK, apply(x,2,mean), 3*var(x))
+  Sigma = array(0, dim=c(KK,p,p))  #Initial variances are assumed to be the same
+  for(k in 1:KK) {
+    Sigma[k,,] = var(x)
+  }
   
   sw     = FALSE
   QQ     = -Inf
   QQ.out = NULL
   s      = 0
   
+  #E step: Calculate the responsibilities "v" for each data point and cluster
+  #Based on the current parameter values (weights, means, and covariance matrices).
   while(!sw){
     ## E step
-    v = array(0, dim=c(n,KK))
+    v = array(0, dim=c(n,KK)) # "v" are calculated using the full covariance matrix Sigma of each cluster.
     for(k in 1:KK){  #Compute the log of the weights
       v[,k] = log(w[k]) + mvtnorm::dmvnorm(x, mu[k,], Sigma[k,,], log=TRUE) 
     }
@@ -192,6 +76,7 @@ for(ss in 1:numruns){
       v[i,] = exp(v[i,] - max(v[i,]))/sum(exp(v[i,] - max(v[i,])))  #Go from logs to actual weights in a numerically stable manner
     }
     
+    ##M step: Update the cluster weights "w", cluster means "mu", and covariance matrices "Sigma" based on the computed responsibilities.
     ## M step
     w = apply(v,2,mean)
     mu = matrix(0, nrow=KK, ncol=p)
@@ -207,16 +92,27 @@ for(ss in 1:numruns){
         Sigma[k,,] = Sigma[k,,] + v[i,k]*(x[i,] - mu[k,])%*%t(x[i,] - mu[k,])
       }
       Sigma[k,,] = Sigma[k,,]/sum(v[,k])
+      diag(Sigma[k,,]) = diag(Sigma[k,,]) + 1e-6
+      
+      # Regularize the covariance matrices
+      #lambda = 1e-6
+      #Sigma[k,,] = Sigma[k,,] + lambda * diag(p)
     }
     
+    # Check convergence: Calculate the log-likelihood "QQn" and compare it to the previous value QQ.
+    #If the relative difference is smaller than a predefined threshold epsilon, the algorithm has converged.
     ##Check convergence
     QQn = 0
     for(i in 1:n){
       for(k in 1:KK){
         QQn = QQn + v[i,k]*(log(w[k]) + mvtnorm::dmvnorm(x[i,],mu[k,],Sigma[k,,],log=TRUE))
-      }
+        #log_likelihood = log(w[k]) + mvtnorm::dmvnorm(x[i,],mu[k,],Sigma[k,,],log=TRUE)
+    #if (is.finite(log_likelihood)) {
+     # QQn = QQn + v[i,k] * log_likelihood
+    #}
+        }
     }
-    if(abs(QQn-QQ)/abs(QQn)<epsilon){
+    if (abs(QQn - QQ) / abs(QQn) < epsilon){
       sw=TRUE
     }
     QQ = QQn
@@ -228,22 +124,402 @@ for(ss in 1:numruns){
   QQ.sum[ss]  = QQ.out[s]
   print(paste("ss =", ss))
 }
+```
+
+
+
+```{r}
+## Cluster reconstruction under my mixture model
+cc = apply(v.sum[which.max(QQ.sum),,], 1, which.max)
+colscale = c("black","blue","red", "yellow")
+pairs(x, col=colscale[cc], labels=colnames(x))
+
+## Cluster reconstruction under the K-means algorithm
+TreatCluster = kmeans(x, KK, nstart = numruns)
+colscale = c("black","blue","red","yellow")
+pairs(x, col=colscale[TreatCluster$cluster], labels=colnames(x))
+```
+```{r}
+
+clusters = cc  # Cluster labels for each data point
+
+# Create new datasets for each cluster
+data_cluster1 = treat1[clusters == 1, ]
+data_cluster2 = treat1[clusters == 2, ]
+data_cluster3 = treat1[clusters == 3, ]
+data_cluster4 = treat1[clusters == 4, ]
+
+# Print the number of subjects in each cluster
+cat("Number of data points in Cluster 1:", nrow(data_cluster1), "\n")
+cat("Number of data points in Cluster 2:", nrow(data_cluster2), "\n")
+cat("Number of data points in Cluster 3:", nrow(data_cluster3), "\n")
+cat("Number of data points in Cluster 4:", nrow(data_cluster4), "\n")
+```
+
+```{R}
+# Extract the cluster assignments and data
+cluster_assignments = apply(v.sum[which.max(QQ.sum), ,], 1, which.max)
+data = data.frame(x_std)
+
+# Add the cluster assignments to the data frame
+data$cluster = as.factor(cluster_assignments)
+
+selected_data = data.frame(x1 = data[, 1], x3 = data[, 3])
+selected_data$cluster = as.factor(cluster_assignments)
+
+
+```
+
+```{r}
+library(factoextra)
+fviz_cluster(list(data = selected_data[, 1:2], cluster = cluster_assignments),
+             geom = "point",
+             ellipse.type = "convex",
+             palette = "jco",
+             ggtheme = theme_minimal())
+
+
+
+
+```
+```{r}
+# Perform PCA on the standardized data
+pca_result = prcomp(x_std)
+
+# Extract the first two principal components
+pca_data = data.frame(pca_result$x[, 1:2])
+pca_data$cluster = as.factor(cluster_assignments)
+
+# Plot the clustering results using the first two principal components
+fviz_cluster(list(data = pca_data[,1:2], cluster = cluster_assignments),
+             geom = "point",
+             ellipse.type = "convex",
+             palette = "jco",
+             ggtheme = theme_minimal())
+
+
+
+```
+
+
+
+#####################################
+
+#### Bayes k-means cluster 1
+
+- Implementation of Bayesian k-means clustering, which is a variation of the Gaussian Mixture Model (GMM) with Expectation-Maximization (EM). 
+- It is different with previous one (GMM-EM) because this algorithm incorporates prior information about the means of the clusters and assumes a common variance across all clusters.
+- Assumes a common variance for all clusters
+
+```{r}
+## Bayesian k-means clustering
+## Standardize the data
+x_std = scale(treat1)
+
+## Setup data
+x       = x_std
+n       = dim(x)[1]
+p       = dim(x)[2]       # Number of features
+KK      = 4
+epsilon = 0.0000001
+par(mfrow=c(1,1))
+par(mar=c(4,4,1,1))
+colscale = c("black","blue","red", "yellow")
+shortnam  = c("1","2","3", "4")
+
+# Initialize the parameters of the algorithm
+set.seed(63252)
+numruns = 50
+v.sum   = array(0, dim=c(numruns, n, KK))
+QQ.sum  = rep(0, numruns)
+
+x[is.na(x)] = colMeans(x, na.rm = TRUE)[col(x)[is.na(x)]]
+
+# Initialize the prior hyperparameters for the means and sd (mu_prior_mean and mu_prior_sd).
+# Set prior hyperparameters for the means
+mu_prior_mean = rep(0, p)
+mu_prior_sd = 1
+
+for(ss in 1:numruns){
+  w   = rep(1, KK)/KK  #Assign equal weight to each component to start with
+  #kmeans_init = kmeans(x, centers = KK, algorithm = "Lloyd", nstart = 1)  #Initialize mu using k-means++ algorithm
+  #mu = kmeans_init$centers
+  mu = rmvnorm(KK, apply(x,2,mean), 3*var(x))
+  sigma = sqrt(var(x))  # Within-cluster standard deviation is assumed to be fixed
+
+  sw     = FALSE
+  QQ     = -Inf
+  QQ.out = NULL
+  s      = 0
+
+  while(!sw){
+    
+    ## Custom function to compute log likelihood for multivariate normal distribution
+    log_dmvnorm_diag_cov = function(x, mean, var) {
+      p = length(mean)
+      log_likelihood = -0.5 * (sum(((x - mean)^2) / var) + p * log(2 * pi) + sum(log(var)))
+      return(log_likelihood)
+      }
+    
+    ## E step
+    v = array(0, dim=c(n, KK)) # "v" are calculated assuming a common variance sigma across all clusters.
+    for (k in 1:KK) {  #Compute the log of the weights
+      v[, k] = log(w[k]) + apply(x, 1, function(row) { log_dmvnorm_diag_cov(row, mean = mu[k, ], var = sigma^2) })
+      }
+    for (i in 1:n) {
+      v[i,] = exp(v[i,] - max(v[i,])) / sum(exp(v[i,] - max(v[i,])))  #Go from logs to actual weights in a numerically stable manner
+      }
+
+    ## M step
+    w = apply(v, 2, mean)
+    mu = matrix(0, nrow=KK, ncol=p)
+    for(k in 1:KK){
+      for(i in 1:n){
+        mu[k,] = mu[k,] + v[i,k]*x[i,]
+      }
+      # Update the means using the prior
+      mu[k,] = (mu[k,] + mu_prior_mean / mu_prior_sd^2) / (sum(v[,k]) + 1 / mu_prior_sd^2)
+    }
+
+    ## Check convergence
+    QQn = 0
+    for(i in 1:n){
+      for(k in 1:KK){
+        QQn = QQn + v[i,k]*(log(w[k]) + dnorm(x[i,], mu[k,], sigma, log=TRUE))
+      }
+    }
+    if (all(abs(QQn - QQ) / abs(QQn) < epsilon)){
+      sw=TRUE
+    }
+    QQ = QQn
+    QQ.out = c(QQ.out, QQ)
+    s = s + 1
+  }
+  
+  v.sum[ss,,] = v
+  QQ.sum[ss]  = QQ.out[s]
+  print(paste("ss"=ss))
+}
+
+
+
+
+```
+
+
+
+```{r}
+## Cluster reconstruction under my mixture model
+cc1 = apply(v.sum[which.max(QQ.sum),,], 1, which.max)
+colscale = c("black","blue","red","yellow")
+pairs(x, col=colscale[cc1], labels=colnames(x))
+
+## Cluster reconstruction under the K-means algorithm
+TreatCluster = kmeans(x, KK, nstart = numruns)
+colscale = c("black","blue","red","yellow")
+pairs(x, col=colscale[TreatCluster$cluster], labels=colnames(x))
+```
+```{r}
+
+clusters = cc1  # Cluster labels for each data point
+
+# Create new datasets for each cluster
+data_cluster1 = treat1[clusters == 1, ]
+data_cluster2 = treat1[clusters == 2, ]
+data_cluster3 = treat1[clusters == 3, ]
+data_cluster4 = treat1[clusters == 4, ]
+
+# Print the number of subjects in each cluster
+cat("Number of data points in Cluster 1:", nrow(data_cluster1), "\n")
+cat("Number of data points in Cluster 2:", nrow(data_cluster2), "\n")
+cat("Number of data points in Cluster 3:", nrow(data_cluster3), "\n")
+cat("Number of data points in Cluster 4:", nrow(data_cluster4), "\n")
+```
+
+
+################################
+
+###### Bayesian k-means clustering 
+
+- Model Assumption: Here, the common variance sigma^2 across all clusters is updated during the M step. 
+
+- In the previous Bayesian k-means code, the common variance sigma was assumed to be fixed and not updated during the iterations.
+
+```{r}
+## Bayesian k-means clustering
+## Standardize the data
+x_std = scale(treat1)
+
+## Setup data
+x       = x_std
+n       = dim(x)[1]
+p       = dim(x)[2]       # Number of features
+KK      = 4
+epsilon = 0.0000001
+par(mfrow=c(1,1))
+par(mar=c(4,4,1,1))
+colscale = c("black","blue","red", "yellow")
+shortnam  = c("1","2","3", "4")
+
+# Initialize the parameters of the algorithm
+set.seed(63252)
+numruns = 50
+v.sum   = array(0, dim=c(numruns, n, KK))
+QQ.sum  = rep(0, numruns)
+
+x[is.na(x)] = colMeans(x, na.rm = TRUE)[col(x)[is.na(x)]]
+
+# Set prior hyperparameters for the means
+mu_prior_mean = rep(0, p)
+mu_prior_sd = 5
+
+for(ss in 1:numruns){
+  w   = rep(1, KK)/KK  #Assign equal weight to each component to start with
+  kmeans_init <- kmeans(x, centers = KK, algorithm = "Lloyd", nstart = 1)  #Initialize mu using k-means++ algorithm
+  mu <- kmeans_init$centers
+  sigma = sqrt(var(x))  # Within-cluster standard deviation is assumed to be fixed
+
+  sw     = FALSE
+  QQ     = -Inf
+  QQ.out = NULL
+  s      = 0
+
+  while(!sw){
+    
+    ## Custom function to compute log likelihood for multivariate normal distribution
+    log_dmvnorm_diag_cov <- function(x, mean, var) {
+      p = length(mean)
+      log_likelihood = -0.5 * (sum(((x - mean)^2) / var) + p * log(2 * pi) + sum(log(var)))
+      return(log_likelihood)
+      }
+    
+    ## E step
+    v = array(0, dim=c(n, KK))
+    for (k in 1:KK) {  
+      v[, k] = log(w[k]) + apply(x, 1, function(row) { log_dmvnorm_diag_cov(row, mean = mu[k, ], var = sigma^2) })
+      }
+    for (i in 1:n) {
+      v[i,] = exp(v[i,] - max(v[i,])) / sum(exp(v[i,] - max(v[i,])))  #Go from logs to actual weights in a numerically stable manner
+      }
+    
+    # M step: updates the common variance sigma^2 for all clusters based on the responsibilities "v" and the differences between the data points x and the means mu.
+    
+    ## M step
+    w = apply(v, 2, mean)
+    mu = matrix(0, nrow=KK, ncol=p)
+    for(k in 1:KK){
+      for(i in 1:n){
+        mu[k,] = mu[k,] + v[i,k]*x[i,]
+        }
+      mu[k,] = mu[k,]/sum(v[,k])
+      }
+    
+    ## Update the common variance sigma^2
+    sigma2 = 0
+    for (k in 1:KK) {
+      for (i in 1:n) {
+        sigma2 = sigma2 + v[i, k] * sum((x[i,] - mu[k,])^2)
+      }
+      }
+    sigma2 = sigma2 / (n * p)
+
+    ## Check convergence
+    QQn = 0
+    for(i in 1:n){
+      for(k in 1:KK){
+        QQn = QQn + v[i,k]*(log(w[k]) + dnorm(x[i,], mu[k,], sigma, log=TRUE))
+      }
+    }
+    if (all(abs(QQn - QQ) / abs(QQn) < epsilon)){
+      sw=TRUE
+    }
+    QQ = QQn
+    QQ.out = c(QQ.out, QQ)
+    s = s + 1
+  }
+  
+  v.sum[ss,,] = v
+  QQ.sum[ss]  = QQ.out[s]
+  print(paste("ss"=ss))
+}
 
 ```
 
 
 ```{r}
-## Cluster reconstruction under the mixture model
-cc = apply(v.sum[which.max(QQ.sum),,], 1 ,which.max)
-colscale = c("black","blue","red")
-pairs2(x, col=colscale[cc], labels=cc)
-ARImle = adjustedRandIndex(cc, as.numeric(iris[,5]))  # Higher values indicate larger agreement
+## Cluster reconstruction under my mixture model
+cc2 = apply(v.sum[which.max(QQ.sum),,], 1, which.max)
+colscale = c("black","blue","red","yellow")
+pairs(x, col=colscale[cc2], labels=colnames(x))
 
 ## Cluster reconstruction under the K-means algorithm
-irisCluster <- kmeans(x, 3, nstart = numruns)
-colscale = c("black","blue","red")
-pairs2(x, col=colscale[irisCluster$cluster], labels=irisCluster$cluster)
-ARIkmeans = adjustedRandIndex(irisCluster$cluster, as.numeric(iris[,5]))
+TreatCluster = kmeans(x, KK, nstart = numruns)
+colscale = c("black","blue","red","yellow")
+pairs(x, col=colscale[TreatCluster$cluster], labels=colnames(x))
+```
+
+```{r}
+
+clusters = cc2  # Cluster labels for each data point
+
+# Create new datasets for each cluster
+data_cluster1 = treat1[clusters == 1, ]
+data_cluster2 = treat1[clusters == 2, ]
+data_cluster3 = treat1[clusters == 3, ]
+data_cluster4 = treat1[clusters == 4, ]
+
+# Print the number of subjects in each cluster
+cat("Number of data points in Cluster 1:", nrow(data_cluster1), "\n")
+cat("Number of data points in Cluster 2:", nrow(data_cluster2), "\n")
+cat("Number of data points in Cluster 3:", nrow(data_cluster3), "\n")
+cat("Number of data points in Cluster 4:", nrow(data_cluster4), "\n")
+```
+
+
+########################
+
+- sample estimates g, d, phi 
+
+```{r}
+# Create sample dataset
+data = data.frame(
+  name = c(rep("A", 3), rep("B", 4), rep("C", 3)),
+  size = c(10, 20, 30, 5, 15, 25, 35, 8, 18, 28),
+  date = as.Date(c("2021-01-01", "2021-01-02", "2021-01-03", "2021-01-01", "2021-01-02", "2021-01-03", "2021-01-04", "2021-01-01", "2021-01-02", "2021-01-03"))
+)
+
+# Convert date to numeric
+data$elapsed_days = as.numeric(difftime(data$date, min(data$date), units = "days"))
+
+# Define the model function
+model_fun = function(params, time, size) {
+  g = params[1]
+  d = params[2]
+  p = params[3]
+  gt = params[4]
+  dt = params[5]
+  (1 - p) * exp(-d * time) + p * exp(g * (time)) - size
+}
+
+# Define the sum of squared residuals function
+ssr_fun = function(params, time, size) {
+  sum(model_fun(params, time, size)^2)
+}
+
+# Group the data by name
+library(dplyr)
+grouped_data = data %>% group_by(name)
+
+# Estimate parameters for each group using the optim function
+estimated_params = grouped_data %>% do({
+  start_params = c(0.00511, 0.00511, 0.9, 0.00511, 0.00511)
+  res = optim(start_params, ssr_fun, time = .$elapsed_days, size = .$size, method = "L-BFGS-B",
+               lower = c(0, 0, 0, 0, 0), upper = c(1, 1, 1, 1, 1))
+  data.frame(name = .$name[1], g = res$par[1], d = res$par[2], p = res$par[3], gt = res$par[4], dt = res$par[5])
+})
+
+print(estimated_params)
+
 
 
 ```
