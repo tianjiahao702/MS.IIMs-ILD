@@ -113,7 +113,7 @@ out2$results
 plot_data = function(data) {
 
     # Create a new plot
-  plot = ggplot(data, aes(x = date, y = size, group = name, color = selected)) +
+  plot = ggplot(data, aes(x = date, y = size, group = name, color = selectedFit)) +
     geom_point(size = 1) +
     geom_line() +
     labs(x = "Date", y = "Score") +
@@ -132,10 +132,10 @@ plot_data = function(data) {
 ```{r}
 ##plot results
 
-cols_to_select = c("type", "selected", "name")
+cols_to_select = c("type", "selectedFit", "name")
 
-gd1 = as.data.frame(out1$allest[cols_to_select])
-gd2 = as.data.frame(out2$allest[cols_to_select])
+gd1 = as.data.frame(out1$results[cols_to_select])
+gd2 = as.data.frame(out2$results[cols_to_select])
 
 # delete duplicated rows
 gd1 = gd1[!duplicated(gd1), ]
@@ -169,17 +169,17 @@ DF2 = read.table(
   "~/Desktop/MS report/data/Data-selected/10083_TEXTCAD_01Oct2021.csv",
   sep = ",", header = TRUE)
 
-Treat = read.table(
+treat = read.table(
   "~/Desktop/MS report/data/Data-selected 2/IIMQILD_221104_Box.csv", 
   sep = ",", header = TRUE)
 
 ## change column name for merge
-colnames(Treat)[which(names(Treat) == "Patient_ID")] <- "SUBJID"
+colnames(treat)[which(names(treat) == "Patient_ID")] <- "SUBJID"
 
 
 ##merge
-DF1_merge = merge(DF1, Treat, by = 'SUBJID', all = TRUE)
-DF2_merge = merge(DF2, Treat, by = 'SUBJID', all = TRUE)
+DF1_merge = merge(DF1, treat, by = 'SUBJID', all = TRUE)
+DF2_merge = merge(DF2, treat, by = 'SUBJID', all = TRUE)
 
 
 ##extract needed variables
@@ -300,15 +300,10 @@ out_hipd_1$models
 ```
 
 ```{r}
-cols_to_select = c("type", "selected", "name")
+cols_to_select = c("type", "selectedFit", "name")
 
-gd1 = as.data.frame(out_hipd_0$allest[cols_to_select])
-gd2 = as.data.frame(out_hipd_1$allest[cols_to_select])
-
-# delete duplicated rows
-gd1 = gd1[!duplicated(gd1), ]
-gd2 = gd2[!duplicated(gd2), ]
-
+gd1 = as.data.frame(out_hipd_0$results[cols_to_select])
+gd2 = as.data.frame(out_hipd_1$results[cols_to_select])
 
 h0 = merge(sub_dataframes$HiPD_V1V2_0, gd1, by = "name", all = TRUE)
 h1 = merge(sub_dataframes$HiPD_V1V2_1, gd2, by = "name", all = TRUE)
@@ -334,13 +329,8 @@ out_csa_1$models
 ```{r}
 cols_to_select = c("type", "selected", "name")
 
-gd1 = as.data.frame(out_csa_0$allest[cols_to_select])
-gd2 = as.data.frame(out_csa_1$allest[cols_to_select])
-
-# delete duplicated rows
-gd1 = gd1[!duplicated(gd1), ]
-gd2 = gd2[!duplicated(gd2), ]
-
+gd1 = as.data.frame(out_csa_0$results[cols_to_select])
+gd2 = as.data.frame(out_csa_1$results[cols_to_select])
 
 csa0 = merge(sub_dataframes$CsA_V1V2_0, gd1, by = "name", all = TRUE)
 csa1 = merge(sub_dataframes$CsA_V1V2_1, gd2, by = "name", all = TRUE)
@@ -367,12 +357,8 @@ out_ctx_1$models
 ```{r}
 cols_to_select = c("type", "selected", "name")
 
-gd1 = as.data.frame(out_ctx_0$allest[cols_to_select])
-gd2 = as.data.frame(out_ctx_1$allest[cols_to_select])
-
-# delete duplicated rows
-gd1 = gd1[!duplicated(gd1), ]
-gd2 = gd2[!duplicated(gd2), ]
+gd1 = as.data.frame(out_ctx_0$results[cols_to_select])
+gd2 = as.data.frame(out_ctx_1$results[cols_to_select])
 
 
 h0 = merge(sub_dataframes$CTX_V1V2_0, gd1, by = "name", all = TRUE)
@@ -400,12 +386,8 @@ out_azt_1$models
 ```{r}
 cols_to_select = c("type", "selected", "name")
 
-gd1 = as.data.frame(out_azt_0$allest[cols_to_select])
-gd2 = as.data.frame(out_azt_1$allest[cols_to_select])
-
-# delete duplicated rows
-gd1 = gd1[!duplicated(gd1), ]
-gd2 = gd2[!duplicated(gd2), ]
+gd1 = as.data.frame(out_azt_0$results[cols_to_select])
+gd2 = as.data.frame(out_azt_1$results[cols_to_select])
 
 
 h0 = merge(sub_dataframes$AZT_V1V2_0, gd1, by = "name", all = TRUE)
@@ -433,12 +415,8 @@ out_tac_1$models
 ```{r}
 cols_to_select = c("type", "selected", "name")
 
-gd1 = as.data.frame(out_tac_0$allest[cols_to_select])
-gd2 = as.data.frame(out_tac_1$allest[cols_to_select])
-
-# delete duplicated rows
-gd1 = gd1[!duplicated(gd1), ]
-gd2 = gd2[!duplicated(gd2), ]
+gd1 = as.data.frame(out_tac_0$results[cols_to_select])
+gd2 = as.data.frame(out_tac_1$results[cols_to_select])
 
 
 h0 = merge(sub_dataframes$Tac_V1V2_0, gd1, by = "name", all = TRUE)
@@ -466,12 +444,8 @@ out_mmf_1$models
 ```{r}
 cols_to_select = c("type", "selected", "name")
 
-gd1 = as.data.frame(out_mmf_0$allest[cols_to_select])
-gd2 = as.data.frame(out_mmf_1$allest[cols_to_select])
-
-# delete duplicated rows
-gd1 = gd1[!duplicated(gd1), ]
-gd2 = gd2[!duplicated(gd2), ]
+gd1 = as.data.frame(out_mmf_0$results[cols_to_select])
+gd2 = as.data.frame(out_mmf_1$results[cols_to_select])
 
 
 h0 = merge(sub_dataframes$MMF_V1V2_0, gd1, by = "name", all = TRUE)
@@ -499,12 +473,8 @@ out_mtx_1$models
 ```{r}
 cols_to_select = c("type", "selected", "name")
 
-gd1 = as.data.frame(out_mtx_0$allest[cols_to_select])
-gd2 = as.data.frame(out_mtx_1$allest[cols_to_select])
-
-# delete duplicated rows
-gd1 = gd1[!duplicated(gd1), ]
-gd2 = gd2[!duplicated(gd2), ]
+gd1 = as.data.frame(out_mtx_0$results[cols_to_select])
+gd2 = as.data.frame(out_mtx_1$results[cols_to_select])
 
 
 h0 = merge(sub_dataframes$MTX_V1V2_0, gd1, by = "name", all = TRUE)
@@ -531,12 +501,8 @@ out_ivi_1$models
 ```{r}
 cols_to_select = c("type", "selected", "name")
 
-gd1 = as.data.frame(out_ivi_0$allest[cols_to_select])
-gd2 = as.data.frame(out_ivi_1$allest[cols_to_select])
-
-# delete duplicated rows
-gd1 = gd1[!duplicated(gd1), ]
-gd2 = gd2[!duplicated(gd2), ]
+gd1 = as.data.frame(out_ivi_0$results[cols_to_select])
+gd2 = as.data.frame(out_ivi_1$results[cols_to_select])
 
 
 h0 = merge(sub_dataframes$IVIg_V1V2_0, gd1, by = "name", all = TRUE)
@@ -563,12 +529,8 @@ out_rtx_1$models
 ```{r}
 cols_to_select = c("type", "selected", "name")
 
-gd1 = as.data.frame(out_rtx_0$allest[cols_to_select])
-gd2 = as.data.frame(out_rtx_1$allest[cols_to_select])
-
-# delete duplicated rows
-gd1 = gd1[!duplicated(gd1), ]
-gd2 = gd2[!duplicated(gd2), ]
+gd1 = as.data.frame(out_rtx_0$results[cols_to_select])
+gd2 = as.data.frame(out_rtx_1$results[cols_to_select])
 
 
 h0 = merge(sub_dataframes$RTX_V1V2_0, gd1, by = "name", all = TRUE)
@@ -596,12 +558,8 @@ swi_1$models
 ```{r}
 cols_to_select = c("type", "selected", "name")
 
-gd1 = as.data.frame(swi_0$allest[cols_to_select])
-gd2 = as.data.frame(swi_1$allest[cols_to_select])
-
-# delete duplicated rows
-gd1 = gd1[!duplicated(gd1), ]
-gd2 = gd2[!duplicated(gd2), ]
+gd1 = as.data.frame(swi_0$results[cols_to_select])
+gd2 = as.data.frame(swi_1$results[cols_to_select])
 
 
 h0 = merge(sub_dataframes$ISswitch_V1V2_0, gd1, by = "name", all = TRUE)

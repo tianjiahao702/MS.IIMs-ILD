@@ -1,0 +1,275 @@
+---
+title: "treatment combination g-d-model"
+author: "Jiahao Tian"
+date: "2023-04-30"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+## read data
+
+DF1 = read.table(
+  "~/Desktop/MS report/data/Data-selected/10083_IMQUAL_01Oct2021.csv", 
+  sep = ",", header = TRUE)
+
+DF2 = read.table(
+  "~/Desktop/MS report/data/Data-selected/10083_TEXTCAD_01Oct2021.csv",
+  sep = ",", header = TRUE)
+
+
+## extract needed variables for model
+
+d2 = DF1 %>% 
+  dplyr:: select(contains("SUBJID",ignore.case = TRUE), 
+                 contains("VISITDTN",ignore.case = TRUE),
+                 contains("SLICE",ignore.case = TRUE))
+
+qlf = DF2 %>% 
+  dplyr:: select(contains("SUBJID",ignore.case = TRUE), 
+                 contains("VISITDTN",ignore.case = TRUE),
+                 contains("REGI",ignore.case = TRUE), 
+                 contains("QLF",ignore.case = TRUE))
+
+## change variable type
+
+d2$name = as.numeric(factor(d2$SUBJID, 
+                  levels=unique(d2$SUBJID)))
+qlf$name = as.numeric(factor(qlf$SUBJID, 
+                  levels=unique(qlf$SUBJID)))
+
+d2$SLICE_THICKNESS = as.numeric(d2$SLICE_THICKNESS)
+d2$SLICE_SPACING = as.numeric(d2$SLICE_SPACING)
+
+# only use whole lung data for g-d-rate model
+
+qlf = qlf[grep("WHOLE", qlf$REGION), , drop = FALSE]
+
+## change to 2d dim 
+## change name to size due to model requirment
+
+d2$size = d2$SLICE_THICKNESS * d2$SLICE_SPACING 
+qlf$size = qlf$QLFCAD
+```
+
+```{r}
+## change time to day due model requirement
+
+d2$date = as.Date(d2$VISITDTN, format = "%d%b%Y")
+d2$date = as.numeric(d2$date)
+
+qlf$date = as.Date(qlf$VISITDTN, format = "%d%b%Y")
+qlf$date = as.numeric(qlf$date)
+
+
+## extract needed variables for model
+
+d2 = d2 %>% 
+  dplyr:: select(contains("name",ignore.case = TRUE), 
+                 contains("date",ignore.case = TRUE),
+                 contains("size",ignore.case = TRUE))
+
+qlf = qlf %>% 
+  dplyr:: select(contains("name",ignore.case = TRUE), 
+                 contains("date",ignore.case = TRUE),
+                 contains("size",ignore.case = TRUE))
+
+
+## change to dataframe fro model use
+
+d2 = as.data.frame(d2)
+qlf = as.data.frame(qlf)
+
+## check and delet missing value
+
+lapply(d2, function(x) {length(which(is.na(x)))})
+lapply(qlf, function(x) {length(which(is.na(x)))})
+d2 = na.omit(d2)
+
+
+## run model
+
+out1 = gdrate(d2, 0.05, FALSE)
+out2 = gdrate(qlf, 0.05, FALSE)
+
+out1$models
+out2$models
+
+out1$results
+out2$results
+```
+
+```{r}
+## read data
+
+DF1 = read.table(
+  "~/Desktop/MS report/data/Data-selected/10083_IMQUAL_01Oct2021.csv", 
+  sep = ",", header = TRUE)
+
+DF2 = read.table(
+  "~/Desktop/MS report/data/Data-selected/10083_TEXTCAD_01Oct2021.csv",
+  sep = ",", header = TRUE)
+
+treat = read.table(
+  "~/Desktop/MS report/data/Data-selected 2/IIMQILD_221104_Box.csv", 
+  sep = ",", header = TRUE)
+
+## change column name for merge
+colnames(treat)[which(names(treat) == "Patient_ID")] = "SUBJID"
+
+
+##merge
+DF1_merge = merge(DF1, treat, by = 'SUBJID', all = TRUE)
+DF2_merge = merge(DF2, treat, by = 'SUBJID', all = TRUE)
+
+
+##extract needed variables
+
+d2_treat = DF1_merge %>% 
+  dplyr:: select(Age,
+                 V1_WL_QLF,
+                 V1_WL_QILD,
+                 contains("SUBJID",ignore.case = FALSE), 
+                 contains("VISITDTN",ignore.case = FALSE),
+                 contains("Sex",ignore.case = FALSE),
+                 contains("V1_CTdate",ignore.case = FALSE),
+                 contains("V2_CTdate",ignore.case = FALSE),
+                 contains("V3_CTdate",ignore.case = FALSE),
+                 contains("V1V2",ignore.case = FALSE),
+                 contains("V1V3",ignore.case = FALSE),
+                 contains("SLICE",ignore.case = FALSE))
+
+qlf_treat = DF2_merge %>% 
+  dplyr:: select(Age,
+                 V1_WL_QLF,
+                 V2_WL_QLF,
+                 V3_WL_QLF,
+                 V1_WL_QILD,
+                 V2_WL_QILD,
+                 V3_WL_QILD,
+                 QLFCAD,
+                 QILD,
+                 FUloss,
+                 Death,
+                 contains("SUBJID",ignore.case = FALSE), 
+                 contains("VISITDTN",ignore.case = FALSE),
+                 contains("Sex",ignore.case = FALSE),
+                 contains("V1_CTdate",ignore.case = FALSE),
+                 contains("V2_CTdate",ignore.case = FALSE),
+                 contains("V3_CTdate",ignore.case = FALSE),
+                 contains("V1V2",ignore.case = FALSE),
+                 contains("V1V3",ignore.case = FALSE),
+                 contains("REGI",ignore.case = FALSE))
+
+## only need whole lung data
+qlf_treat = qlf_treat[grep("WHOLE", qlf_treat$REGION), , drop = FALSE]
+
+
+## change variable type
+
+
+qlf_treat$name = as.numeric(factor(qlf_treat$SUBJID, 
+                  levels=unique(qlf_treat$SUBJID)))
+
+## check and delet missing value
+
+#lapply(d2, function(x) {length(which(is.na(x)))})
+#lapply(qlf, function(x) {length(which(is.na(x)))})
+#d2 = na.omit(d2)
+
+
+
+
+qlf_treat = as.data.frame(qlf_treat)
+```
+
+
+```{r}
+get_treatment_combinations = function(df, dichotomous_vars, new_col_name) {
+  
+  # create a new column with treatment information
+  df[[new_col_name]] = apply(df[dichotomous_vars], 1, function(x) {
+    treatments = names(x[x == 1])
+    if (length(treatments) == 0) {
+      "None"
+    } else if (length(treatments) == 1) {
+      treatments
+    } else {
+      paste(treatments, collapse = "+")
+    }
+  })
+  
+  # return the modified dataframe
+  return(df)
+}
+
+```
+
+```{R}
+# List of dichotomous variables
+dichotomous_vars = c("HiPD_V1V2", "CsA_V1V2", "CTX_V1V2","AZT_V1V2", 
+                      "Tac_V1V2", "MMF_V1V2", "MTX_V1V2", "IVIg_V1V2",
+                      "RTX_V1V2", "ISswitch_V1V2")
+
+qlf1 = get_treatment_combinations(qlf_treat, dichotomous_vars, "treat_comb_V1V2")
+
+
+dichotomous_vars2 = c("HiPD_V1V3", "CsA_V1V3", "CTX_V1V3","AZT_V1V3", 
+                      "Tac_V1V3", "MMF_V1V3", "MTX_V1V3", "IVIg_V1V3",
+                      "RTX_V1V3", "ISswitch_V1V3")
+
+qlf1 = get_treatment_combinations(qlf1, dichotomous_vars2, "treat_comb_V1V3")
+```
+
+
+```{r}
+cols_to_select = c("type", "selectedFit", "name", "g", "d", "phi")
+
+gd1 = as.data.frame(out2$results[cols_to_select])
+
+qlf1 = merge(qlf1, gd1, by = "name", all = TRUE)
+```
+
+
+```{r}
+g_d_rank = qlf1 %>% 
+  dplyr:: select(Age,
+                 V1_WL_QLF,
+                 V2_WL_QLF,
+                 V3_WL_QLF,
+                 contains("Sex",ignore.case = FALSE),
+                 contains("V1_CTdate",ignore.case = FALSE),
+                 contains("V2_CTdate",ignore.case = FALSE),
+                 contains("V3_CTdate",ignore.case = FALSE),
+                 FUloss,
+                 Death,
+                 SUBJID,
+                 name,
+                 treat_comb_V1V2,
+                 treat_comb_V1V3,
+                 g,
+                 d,
+                 phi,
+                 type,
+                 selectedFit)
+
+g_d_rank = distinct(g_d_rank)
+
+# subset data into two groups
+df_d_only = select(g_d_rank, -g)
+df_g_only = select(g_d_rank, -d)
+
+df_g_only = df_g_only %>% 
+  arrange(is.na(g), g)
+
+df_d_only = df_d_only %>% 
+  arrange(desc(d))
+
+```
+
+
+
+

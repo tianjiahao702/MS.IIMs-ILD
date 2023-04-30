@@ -26,10 +26,10 @@ library(mvtnorm)
 ## Compare k-means clustering and a location and scale mixture model with K normals
 
 ## Standardize the data
-x_std = scale(treat1)
+#x_std = scale(treat1)
 
 ## Setup data
-x       = x_std
+x       = as.matrix(treat1)
 n       = dim(x)[1]
 p       = dim(x)[2]       # Number of features
 KK      = 4
@@ -40,7 +40,7 @@ colscale = c("black","blue","red", "yellow")
 shortnam  = c("1","2","3", "4")
 
 # Initialize the parameters of the algorithm
-set.seed(63252)
+set.seed(123)
 numruns = 50
 v.sum   = array(0, dim=c(numruns, n, KK))
 QQ.sum  = rep(0, numruns)
@@ -159,7 +159,7 @@ cat("Number of data points in Cluster 4:", nrow(data_cluster4), "\n")
 ```{R}
 # Extract the cluster assignments and data
 cluster_assignments = apply(v.sum[which.max(QQ.sum), ,], 1, which.max)
-data = data.frame(x_std)
+data = data.frame(x)
 
 # Add the cluster assignments to the data frame
 data$cluster = as.factor(cluster_assignments)
@@ -184,7 +184,7 @@ fviz_cluster(list(data = selected_data[, 1:2], cluster = cluster_assignments),
 ```
 ```{r}
 # Perform PCA on the standardized data
-pca_result = prcomp(x_std)
+pca_result = prcomp(x)
 
 # Extract the first two principal components
 pca_data = data.frame(pca_result$x[, 1:2])
