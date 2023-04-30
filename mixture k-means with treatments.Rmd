@@ -18,39 +18,41 @@ library(mclust)
 ```{r}
 ## Missed patien 58 data points, added here.
 
-Treat = read.table(
-  "~/Desktop/MS report/data/Data-selected 2/IIMQILD_221104_Box.csv", 
-  sep = ",", header = TRUE)
+Treat = read.csv(
+  "~/Desktop/MS report/data/Data-selected 2/IIMQILD_221104_Box.csv",
+  header = TRUE,
+  na = c("", "NA"))
 
 # add missing observation for 58
 # Create a new observation as a data frame
-#new_observation = data.frame(Patient_ID = "10083_SNUH_P24", V1_WL_QLF = 2.1,
-                              #V1_CTdate = "5-Sep-13", Age = 47,
-                              #V1_WL_QILD = 21.7)
+# Assumn age and sex by mean for each column
+new_observation = data.frame(Patient_ID = "10083_SNUH_P24", V1_WL_QLF = 2.1,
+                             V1_CTdate = "5-Sep-13", Age = 53.15, 
+                             Sex = 2, V1_WL_QILD = 21.7)
 
 # Add NA values for missing columns in the new observation
-#if (length(colnames(new_observation)) < length(colnames(Treat))) {
- # missing_cols = setdiff(colnames(Treat), colnames(new_observation))
-  #for (col in missing_cols) {
-   # new_observation[[col]] = NA
-  #}
-#}
+if (length(colnames(new_observation)) < length(colnames(Treat))) {
+  missing_cols = setdiff(colnames(Treat), colnames(new_observation))
+  for (col in missing_cols) {
+    new_observation[[col]] = NA
+  }
+}
 
 # Identify the row where need to add the new observation
-#row_index = 58
+row_index = 58
 
 # Add the new observation to the specific row using row indexing
-#Treat = rbind(Treat[1:(row_index-1), ], 
- #             new_observation, Treat[row_index:nrow(Treat), ])
+Treat = rbind(Treat[1:(row_index-1), ], 
+             new_observation, Treat[row_index:nrow(Treat), ])
 
 # Reset row names to reflect the new row addition
-#rownames(Treat) = NULL
+rownames(Treat) = NULL
 
 ## change column name for merge
+
 colnames(Treat)[which(names(Treat) == "Patient_ID")] = "SUBJID"
 
-Treat$name = as.numeric(factor(Treat$SUBJID, 
-                  levels=unique(Treat$SUBJID)))
+Treat$name = as.numeric(factor(Treat$SUBJID, levels=unique(Treat$SUBJID)))
 ```
 
 
@@ -123,7 +125,8 @@ qlf = as.data.frame(qlf)
 
 ```{r}
 # Subset the data to only contain visit 1(baseline)
-treat1 = Treat[, c("name", "V1_CTdate", "V1_WL_QLF", "Age", "Sex", "V1_WL_QILD")]
+treat1 = Treat[, c("name", "V1_CTdate", "V1_WL_QLF",
+                   "V1_WL_QILD", "Age", "Sex")]
 
 # Check for missing values in your dataset
 if (sum(is.na(treat1)) > 0) {
@@ -335,7 +338,7 @@ for (i in 1:num_clusters) {
 
 ```{r}
 
-clusters = cc
+clusters = results1$classification
   # Cluster labels for each data point
 
 # Create new datasets for each cluster
