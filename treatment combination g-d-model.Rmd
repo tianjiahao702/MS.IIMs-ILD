@@ -7,6 +7,14 @@ output: pdf_document
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(dplyr)
+library(readr)
+library(tumgr)
+library(minpack.lm)
+library(survival)
+library(survminer)
+library(grid)
 ```
 
 ```{r}
@@ -257,19 +265,234 @@ g_d_rank = qlf1 %>%
                  selectedFit)
 
 g_d_rank = distinct(g_d_rank)
+```
+
+```{R}
+#write.csv(g_d_rank,"treat_combine.csv", row.names = TRUE)
+```
+
+
+```{r}
 
 # subset data into two groups
 df_d_only = select(g_d_rank, -g)
 df_g_only = select(g_d_rank, -d)
 
 df_g_only = df_g_only %>% 
+  dplyr:: select(treat_comb_V1V2,
+                 treat_comb_V1V3,
+                 g,
+                 phi,
+                 selectedFit,
+                 type,
+                 Age,
+                 SUBJID,
+                 name,
+                 Sex,
+                 FUloss,
+                 Death) %>%
   arrange(is.na(g), g)
 
 df_d_only = df_d_only %>% 
+   dplyr:: select(treat_comb_V1V2,
+                 treat_comb_V1V3,
+                 d,
+                 phi,
+                 selectedFit,
+                 type,
+                 Age,
+                 SUBJID,
+                 name,
+                 Sex,
+                 FUloss,
+                 Death) %>%
   arrange(desc(d))
 
 ```
 
 
+```{R}
+write.csv(g_d_rank,"treat_combine.csv", row.names = TRUE)
+write.csv(df_g_only,"g-rate-only.csv", row.names = TRUE)
+write.csv(df_d_only,"d-rate-only.csv", row.names = TRUE)
+
+```
 
 
+######### Survival Curve
+
+```{r}
+qlf1$date = as.Date(qlf1$VISITDTN, format = "%d%b%Y")
+qlf1$date = as.numeric(qlf1$date)
+
+```
+
+```{r}
+# Sort data by patient ID and visit date
+qlf12 = qlf1[order(qlf1$name, qlf1$date),]
+
+# Calculate total follow-up time in days
+total_follow_up_days = aggregate(date ~ name, qlf12, function(x) max(x) - min(x))
+colnames(total_follow_up_days)[which(names(total_follow_up_days) == "date")] = "fu_date"
+```
+
+```{r}
+qlf111 = merge(df_g_only, total_follow_up_days, by = 'name', all = TRUE)
+qlf222 = merge(df_d_only, total_follow_up_days, by = 'name', all = TRUE)
+
+#sur_df1 = sur_df1[!is.na(sur_df1$date) & !is.na(sur_df1$g), ]
+
+qlf111 = qlf111[!is.na(qlf111$fu_date) & !is.na(qlf111$g), ]
+qlf111$time_mon = qlf111$fu_date / 30
+
+qlf222 = qlf222[!is.na(qlf222$fu_date) & !is.na(qlf222$d), ]
+qlf222$time_mon = qlf222$fu_date / 30
+
+qlf111$Number1 <- match(qlf111$treat_comb_V1V2, unique(qlf111$treat_comb_V1V2))
+qlf111$Number2 <- match(qlf111$treat_comb_V1V3, unique(qlf111$treat_comb_V1V3))
+
+qlf222$Number1 <- match(qlf222$treat_comb_V1V2, unique(qlf222$treat_comb_V1V2))
+qlf222$Number2 <- match(qlf222$treat_comb_V1V3, unique(qlf222$treat_comb_V1V3))
+
+
+```
+
+```{r}
+## chose threshold
+
+#sur_df$g = log(sur_df$g)
+qlf111$log_g = log(qlf111$g)
+qlf222$log_d = log(qlf222$d)
+
+
+
+
+hist(qlf111$log_g, main = "Tumor Growth Rate Distribution", xlab = "Tumor Growth Rate", col = "lightblue", border = "black")
+
+mean_growth_rate = mean(qlf111$log_g)
+median_growth_rate = median(qlf111$log_g)
+quantiles_growth_rate = quantile(qlf111$log_g, probs = c(0.25, 0.5, 0.75))
+
+print(mean_growth_rate)
+print(median_growth_rate)
+print(quantiles_growth_rate)
+
+hist(qlf222$log_d, main = "Tumor Decay Rate Distribution", xlab = "Tumor Growth Rate", col = "lightblue", border = "black")
+
+mean(qlf222$log_d)
+median(qlf222$log_d)
+quantile(qlf222$log_d, probs = c(0.25, 0.5, 0.75))
+
+```
+
+```{r}
+# Replace 'chosen_threshold' with the threshold value you decided on
+### NO NEED!!!!!! no meaning!!!!
+chosen_threshold = -7.233721
+chosen_threshold1 = -6.492849
+
+
+
+qlf111$event = ifelse(qlf111$log_g > chosen_threshold, 1, 0)
+qlf222$event = ifelse(qlf222$log_d > chosen_threshold, 1, 0)
+```
+
+```{r}
+
+# Create a subset
+surv_obj = Surv(qlf111$time_mon, qlf111$Death)
+
+# Fit the Kaplan-Meier model for the subset
+km_fit = survfit(surv_obj ~ qlf111$Number1)
+
+
+# Plot the Kaplan-Meier curve for the subset
+g_landmark = ggsurvplot(km_fit, data = qlf111, risk.table = TRUE, pval = TRUE)
+g_landmark
+#plot(km_fit, log = "x", xlab = "Time (log scale)", ylab = "Survival probability")
+
+
+survdiff(surv_obj ~ qlf111$Number1)
+
+
+
+```
+
+
+
+```{r}
+# Subset the data to observations beyond the landmark time
+landmark_time = #idk
+landmark_data = qlf111[qlf111$time_mon > landmark_time, ]
+
+# Create the subset
+landmark_surv_obj = Surv(landmark_data$time_mon, landmark_data$event)
+
+# Fit the Kaplan-Meier model for the subset
+landmark_km_fit = survfit(landmark_surv_obj ~ 1)
+
+# Plot the Kaplan-Meier curve for the subset
+g_landmark = ggsurvplot(landmark_km_fit, data = landmark_data, risk.table = TRUE, pval = TRUE)
+g_landmark
+
+plot(landmark_km_fit, log = "x", xlab = "Time (log scale)", ylab = "Survival probability")
+```
+
+
+```{R}
+
+# Calculate the tertiles of the log growth rate
+log_growth_tertiles = quantile(qlf111$log_g, probs = c(1/3, 2/3))
+
+# Create a new column with the tertile groups
+qlf111$log_growth_tertile = cut(qlf111$log_g,
+                                  breaks = c(-Inf, log_growth_tertiles, Inf),
+                                  labels = c("1", "2", "3"),
+                                  include.lowest = TRUE)
+
+
+# Calculate the tertiles of the log decay rate
+log_decay_tertiles = quantile(qlf222$log_d, probs = c(1/3, 2/3))
+
+# Create a new column with the tertile groups
+qlf222$log_decay_tertile = cut(qlf222$log_d,
+                                  breaks = c(-Inf, log_decay_tertiles, Inf),
+                                  labels = c("1", "2", "3"),
+                                  include.lowest = TRUE)
+
+
+
+```
+
+
+```{r}
+landmark_surv_obj = Surv(qlf111$time_mon, qlf111$Death)
+
+# Fit the Kaplan-Meier model for the subset
+landmark_km_fit = survfit(landmark_surv_obj ~ qlf111$log_growth_tertile)
+
+# Plot the Kaplan-Meier curve for the subset
+g_landmark = ggsurvplot(landmark_km_fit, data = qlf111, risk.table = TRUE, pval = TRUE)
+g_landmark
+
+plot(landmark_km_fit, log = "x", xlab = "Time (log scale)", ylab = "Survival probability")
+
+landmark_surv_obj1 = Surv(qlf222$time_mon, qlf222$Death)
+
+# Fit the Kaplan-Meier model for the subset
+landmark_km_fit1 = survfit(landmark_surv_obj1 ~ qlf222$log_decay_tertile)
+
+# Plot the Kaplan-Meier curve for the subset
+g_landmark1 = ggsurvplot(landmark_km_fit1, data = qlf222, risk.table = TRUE, pval = TRUE)
+g_landmark1
+
+plot(landmark_km_fit1, log = "x", xlab = "Time (log scale)", ylab = "Survival probability")
+
+
+```
+
+```{r}
+
+table(g_d_rank$selectedFit)
+table(g_d_rank$treat_comb_V1V2)
+```
