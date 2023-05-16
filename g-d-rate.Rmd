@@ -59,6 +59,10 @@ qlf = qlf[grep("WHOLE", qlf$REGION), , drop = FALSE]
 
 d2$size = d2$SLICE_THICKNESS * d2$SLICE_SPACING 
 qlf$size = qlf$QLFCAD
+
+##omit patient with missing record
+qlf = subset(qlf, name != "58")
+
 ```
 
 ```{r}
@@ -99,7 +103,7 @@ d2 = na.omit(d2)
 ## run model
 
 out1 = gdrate(d2, 0.05, FALSE)
-out2 = gdrate(qlf, 0.05, FALSE)
+out2 = gdrate(qlf, 0.05, TRUE)
 
 out1$models
 out2$models

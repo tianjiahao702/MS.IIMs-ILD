@@ -328,6 +328,44 @@ qlf1$date = as.numeric(qlf1$date)
 ```
 
 ```{r}
+# Calculate the percent  change of QLF score
+
+qlf1$visitdate = as.Date(qlf1$VISITDTN, format = "%d%b%Y")
+
+# Calculate the initial and final tumor size for each patient
+initial_sizes = qlf1 %>%
+  group_by(name) %>%
+  summarize(initial_size = min(QLFCAD[visitdate == min(visitdate)]))
+
+final_sizes = qlf1 %>%
+  group_by(name) %>%
+  summarize(final_size = max(QLFCAD[visitdate == max(visitdate)]))
+
+# Merge the initial and final tumor sizes
+size_changes = merge(initial_sizes, final_sizes, by = "name")
+
+
+# Calculate the percent change for each patient
+size_changes$change = (size_changes$final_size - size_changes$initial_size) 
+
+# Display the percent change for each patient
+print(size_changes)
+```
+
+
+```{r}
+df = read.csv("treat_combine.csv", sep = ",", header = TRUE)
+
+df = merge(df, size_changes, by = 'name', all = TRUE)
+
+write.csv(df,"treat_combine.csv", row.names = TRUE)
+
+
+```
+
+
+
+```{r}
 # Sort data by patient ID and visit date
 qlf12 = qlf1[order(qlf1$name, qlf1$date),]
 
@@ -339,6 +377,10 @@ colnames(total_follow_up_days)[which(names(total_follow_up_days) == "date")] = "
 ```{r}
 qlf111 = merge(df_g_only, total_follow_up_days, by = 'name', all = TRUE)
 qlf222 = merge(df_d_only, total_follow_up_days, by = 'name', all = TRUE)
+g_d_rank = merge(g_d_rank, total_follow_up_days, by = 'name', all = TRUE)
+g_d_rank$time_mon = g_d_rank$fu_date / 30
+
+
 
 #sur_df1 = sur_df1[!is.na(sur_df1$date) & !is.na(sur_df1$g), ]
 
