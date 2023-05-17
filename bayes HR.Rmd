@@ -1,0 +1,153 @@
+---
+title: "bayes HR"
+author: "Jiahao Tian"
+date: "2023-05-17"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+````{r}
+
+# Create a new binary column based on the existing column
+t_df22$decay <- ifelse(t_df22$group %in% c("low decay", "high decay"), 1, 0)
+t_df22$growth <- ifelse(t_df22$group %in% c("low growth", "high growth"), 1, 0)
+
+
+```
+
+```{R}
+
+# Define the prior
+# Fit the model
+library(rstanarm)
+fit <- stan_surv(Surv(time_mon, Death) ~ group,
+                 data = t_df22, basehaz = "weibull",
+               prior = normal(autoscale = T),
+               prior_intercept = normal(autoscale = T),
+               #prior_aux = cauchy(0, 5, autoscale = T),
+               chains = 2, iter = 2000, seed = 123,
+               prior_PD = F)
+
+# Print the model summary
+print(fit)
+
+
+
+
+```
+
+```{r}
+round(as.data.frame(summary(fit)), 2)
+
+
+```
+```{r}
+fit.stan.const <- update(fit, prior_PD = FALSE)
+```
+
+
+```{r}
+bayesplot_grid(mcmc_intervals(fit),
+                         mcmc_intervals(fit.stan.const),
+                         titles = c("Prior","Posterior"),
+                         xlim = c(-5,1),grid_args = list(nrow =2))
+          
+bayesplot_grid(mcmc_hist(fit),
+               mcmc_hist(fit.stan.const),
+               titles = c("Prior","Posterior"),
+               grid_args = list(nrow = 2))
+
+```
+
+
+```{r}
+add_cox_hr <- vline_at(exp(model$coefficients), color = "green")
+
+bayesplot_grid(
+  mcmc_hist(fit, pars = c("grouplow decay"),
+            transformations = exp, 
+            binwidth = 0.05) + add_cox_hr,
+  
+  mcmc_hist(fit.stan.const,
+            pars = c("grouplow decay"),
+            transformations = exp,
+            binwidth = 0.05) + add_cox_hr,
+  titles = c("Prior","Posterior"),
+  xlim = c(0,3),
+  grid_args = list(nrow = 2))
+
+
+```
+
+
+```{r}
+
+# weibull model
+fit.stan.weib <- update(fit.stan.const,
+                        basehaz = "weibull")
+```
+
+
+```{r}
+
+# cubic m-spline model (with df = 10)
+fit.stan.ms10 <- update(fit.stan.const,
+                        basehaz = "ms",
+                        prior_aux = dirichlet(1),
+                        basehaz_ops = list(df = 10))
+
+# piecewise constant model (with df = 5)
+fit.stan.pw5 <- update(fit.stan.const,
+                       basehaz = "ms",
+                       prior_aux = dirichlet(1),
+                       basehaz_ops = list(degree = 0, df = 5))
+
+# piecewise constant model (with df = 10)
+fit.stan.pw10 <- update(fit.stan.const,
+                        basehaz = "ms",
+                        prior_aux = dirichlet(1),
+                        basehaz_ops = list(degree = 0, df = 10))
+```
+
+```{r}
+fits_stan <- list("Weibull" = fit.stan.const,
+                  "MS (df = 10)" = fit.stan.ms10,
+                  "PW (df = 5)" = fit.stan.pw5,
+                  "PW (df = 10)" = fit.stan.pw10
+)
+
+loos <- map(fits_stan, loo)
+loo_compare(loos)
+```
+
+
+```{r}
+add_knots <- function(x) {
+  knots <- x$basehaz$knots
+  if (is.null(knots))
+    return(NULL)
+  geom_vline(xintercept = knots, color = "green", alpha = 0.5)
+  }
+
+# generate the 'ps_check' plots
+plots <- map(fits_stan, ~ (ps_check(.) + add_knots(.)))
+# combine the plots
+bayesplot_grid(
+  plots = plots,
+  titles = names(fits_stan),
+  grid_args = list(ncol = 3))
+```
+
+
+```{R}
+#model = coxph(Surv(fu_date, Death) ~ low_decay + high_decay+
+ #               low_growth + high_growth +
+  #              yoyo + remainder, data = t_df22)
+
+model = coxph(Surv(fu_date, Death) ~ group, data = t_df22)
+summary(model)
+
+```

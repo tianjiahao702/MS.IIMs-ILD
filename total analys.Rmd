@@ -1,0 +1,1233 @@
+---
+title: "total analys"
+author: "Jiahao Tian"
+date: "2023-05-07"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(dplyr)
+library(readr)
+library(tumgr)
+library(minpack.lm)
+library(survival)
+library(survminer)
+library(grid)
+library(lme4)
+library(rstanarm)
+library(bayesplot)
+library(loo)
+```
+
+
+```{r}
+t_df = read.csv("treat_combine.csv", sep = ",", header = TRUE)
+
+```
+
+```{r}
+t_df$log_g = log(t_df$g)
+t_df$log_d = log(t_df$d)
+
+hist(t_df$log_g, main = "Tumor Growth Rate Distribution", xlab = "Tumor Growth Rate", col = "lightblue", border = "black")
+
+hist(t_df$log_d, main = "Tumor Growth Rate Distribution", xlab = "Tumor Growth Rate", col = "lightblue", border = "black")
+```
+
+
+```{r}
+g_df = t_df[!is.na(t_df$log_g), ]
+g_df <- g_df %>%
+  filter(!(selectedFit %in% c("gd", "gdphi")))
+
+
+# Calculate the tertiles of the log growth rate
+log_growth_tertiles = quantile(g_df$log_g, probs = c(1/2))
+
+# Create a new column with the tertile groups
+g_df$log_growth_tertile = cut(g_df$log_g,
+                                  breaks = c(-Inf, log_growth_tertiles, Inf),
+                                  labels = c(1, 2),
+                                  include.lowest = TRUE)
+
+
+d_df = t_df[!is.na(t_df$log_d) & !is.na(t_df$Death), ]
+d_df <- d_df %>%
+  filter(!(selectedFit %in% c("gd", "gdphi")))
+
+
+# Calculate the tertiles of the log growth rate
+log_decay_tertiles = quantile(d_df$log_d, probs = c(1/2))
+
+# Create a new column with the tertile groups
+d_df$log_decay_tertile = cut(d_df$log_d,
+                                  breaks = c(-Inf, log_decay_tertiles, Inf),
+                                  labels = c(1, 2),
+                                  include.lowest = TRUE)
+
+t_df11 = merge(t_df, select(g_df, name, log_growth_tertile), by = "name", all.x = TRUE)
+
+t_df11 = merge(t_df11, select(d_df, name, log_decay_tertile), by = "name", all.x = TRUE)
+```
+
+
+```{R}
+# Create a new column
+t_df11$group = ifelse(t_df11$selectedFit %in% c("gd", "gdphi"), 5, NA)
+
+t_df11 = t_df11 %>%
+  mutate(group = case_when(
+    log_growth_tertile == 1 ~ "low growth",
+    log_growth_tertile == 2 ~ "high growth",
+    log_decay_tertile == 1 ~ "low decay",
+    log_decay_tertile == 2 ~ "high decay",
+    TRUE ~ as.character(group)
+  ))
+```
+
+```{r}
+# Change value 5 to "yoyo" in the "sur_5" column
+t_df11$group = ifelse(t_df11$group == 5, "yoyo", t_df11$group)
+
+```
+
+```{r}
+t_df11$group = ifelse(is.na(t_df11$group), "remainder", t_df11$group)
+
+```
+
+```{r}
+sur_df = t_df11[!is.na(t_df11$group), ]
+
+
+```
+
+##### Part 1.
+
+
+- Kaplan-Meier curve for visualizing survival, death as event. Three curves, which are separated as three part by tertiles for both g and d.
+
+
+```{r}
+library(ggfortify)
+surv_obj = Surv(sur_df$time_mon, sur_df$Death)
+
+# Fit the Kaplan-Meier model for the subset
+km_fit = survfit(surv_obj ~ sur_df$group)
+
+# Plot the Kaplan-Meier curve for the subset
+sur_km = ggsurvplot(km_fit, data = sur_df, 
+                    risk.table = TRUE, 
+                    pval = TRUE,
+                    xlab = "Time (in month)")
+
+sur_km
+
+
+```
+
+
+
+```{r}
+### no need
+
+library(ggfortify)
+g_surv_obj = Surv(g_df$time_mon, g_df$Death)
+
+# Fit the Kaplan-Meier model for the subset
+g_km_fit = survfit(g_surv_obj ~ g_df$log_growth_tertile)
+
+# Plot the Kaplan-Meier curve for the subset
+g_km = ggsurvplot(g_km_fit, data = g_df, risk.table = TRUE, pval = TRUE)
+g_km
+
+plot(g_km_fit, log = "x", xlab = "Time (log scale)", ylab = "Survival probability")
+
+
+
+d_surv_obj = Surv(d_df$time_mon, d_df$Death)
+
+# Fit the Kaplan-Meier model for the subset
+d_km_fit = survfit(d_surv_obj ~ d_df$log_decay_tertile)
+
+# Plot the Kaplan-Meier curve for the subset
+d_km = ggsurvplot(d_km_fit, data = d_df, risk.table = TRUE, pval = TRUE)
+d_km
+autoplot(d_km_fit)
+
+plot(d_km_fit, log = "x", xlab = "Time (log scale)", ylab = "Survival probability")
+
+```
+
+
+- Hazard ratios for each tertile of the growth rate and decay rate, as well as for other factors of interest(remainder: no 20% differ, and not fit).
+
+- As whole
+
+```{r}
+## extract remainders.
+t_df$remainder = ifelse(is.na(t_df$log_g) & is.na(t_df$log_d), 1, 0)
+t_df = t_df[!is.na(t_df$Death), ]
+```
+
+
+
+```{R}
+# Create binary variables for each tertile group
+g_df$growth_tertile1 = ifelse(g_df$log_growth_tertile == 1, 1, 0)
+g_df$growth_tertile2 = ifelse(g_df$log_growth_tertile == 2, 1, 0)
+g_df$growth_tertile3 = ifelse(g_df$log_growth_tertile == 3, 1, 0)
+
+d_df$decay_tertile1 = ifelse(d_df$log_decay_tertile == 1, 1, 0)
+d_df$decay_tertile2 = ifelse(d_df$log_decay_tertile == 2, 1, 0)
+d_df$decay_tertile3 = ifelse(d_df$log_decay_tertile == 3, 1, 0)
+```
+
+```{R}
+g_selected = g_df[, c("name", "growth_tertile1", "growth_tertile2", "growth_tertile3")]
+
+d_selected = d_df[, c("name", "decay_tertile1","decay_tertile2", "decay_tertile3")]
+
+t_df = merge(t_df, g_selected, by = "name", all.x = TRUE)
+t_df = merge(t_df, d_selected, by = "name", all.x = TRUE)
+```
+
+```{r}
+# Replace NAs in tertile group with 0
+t_df$growth_tertile1 = replace(t_df$growth_tertile1, is.na(t_df$growth_tertile1), 0)
+t_df$growth_tertile2 = replace(t_df$growth_tertile2, is.na(t_df$growth_tertile2), 0)
+t_df$growth_tertile3 = replace(t_df$growth_tertile3, is.na(t_df$growth_tertile3), 0)
+
+t_df$decay_tertile1 = replace(t_df$decay_tertile1, is.na(t_df$decay_tertile1), 0)
+t_df$decay_tertile2 = replace(t_df$decay_tertile2, is.na(t_df$decay_tertile2), 0)
+t_df$decay_tertile3 = replace(t_df$decay_tertile3, is.na(t_df$decay_tertile3), 0)
+```
+
+```{r}
+
+
+# Add a new column for growth and decay groups
+t_df = t_df %>%
+  mutate(
+    only_growth = case_when(
+      growth_tertile1 == 1 ~ "growth_tertile1",
+      growth_tertile2 == 1 ~ "growth_tertile2",
+      growth_tertile3 == 1 ~ "growth_tertile3",
+      TRUE ~ "none"
+    ),
+    only_decay = case_when(
+      decay_tertile1 == 1 ~ "decay_tertile1",
+      decay_tertile2 == 1 ~ "decay_tertile2",
+      decay_tertile3 == 1 ~ "decay_tertile3",
+      TRUE ~ "none"
+    )
+  ) 
+
+# Now create the combined_g variable
+t_df = mutate(t_df, combined_g = case_when(
+  `decay_tertile2` == 1 & `growth_tertile3` == 1 ~ "middle decay and high growth",
+  `decay_tertile3` == 1 & `growth_tertile2` == 1 ~ "high decay and middle growth",
+  `decay_tertile3` == 1 & `growth_tertile1` == 1 ~ "high decay and slow growth",
+  `decay_tertile2` == 1 & `growth_tertile2` == 1 ~ "middle decay and middle growth",
+  `decay_tertile1` == 1 & `growth_tertile2` == 1 ~ "slow decay and middle growth",
+  `decay_tertile2` == 1 & `growth_tertile1` == 1 ~ "middle decay and slow growth",
+  `only_decay` ==  "decay_tertile1" ~ "decay_tertile1",
+  `only_decay` ==  "decay_tertile2" ~ "decay_tertile2",
+  `only_decay` ==  "decay_tertile3" ~ "decay_tertile3",
+  `only_growth` == "growth_tertile1" ~ "growth_tertile1", 
+  `only_growth` == "growth_tertile2" ~ "growth_tertile2",
+  `only_growth` == "growth_tertile3" ~ "growth_tertile3",
+  `remainder` == 1 ~ "Remainder"))
+
+
+
+```
+
+```{R}
+## bad
+# Fit the Cox proportional hazards model
+model = coxph(Surv(time_mon, Death) ~ combined_g, data = t_df)
+exp(model$coef)
+
+```
+
+
+```{r}
+
+##bad
+
+library(finalfit)
+dependent = "Surv(time_mon, Death)"
+explanatory = c("combined_g")
+
+t_df %>%
+  finalfit(dependent, explanatory)
+
+t_df %>% 
+    finalfit(dependent, explanatory, add_dependent_label = FALSE) %>% 
+    rename("Death" = label) %>% 
+    rename(" " = levels) %>% 
+    rename("  " = all)
+
+
+```
+
+
+```{r}
+## only g-3 d-1 remainder shows association
+library(finalfit)
+dependent = "Surv(time_mon, Death)"
+explanatory = c("Age", "Sex", 
+                "growth_tertile1", "growth_tertile2",
+                "growth_tertile3", "decay_tertile1",
+                "decay_tertile2", "decay_tertile3",
+                "remainder")
+t_df %>%
+  finalfit(dependent, explanatory)
+
+t_df %>% 
+    finalfit(dependent, explanatory, add_dependent_label = FALSE) %>% 
+    rename("Death" = label) %>% 
+    rename(" " = levels) %>% 
+    rename("  " = all)
+
+```
+
+
+```{R}
+t_df %>% 
+    coxphmulti(dependent, explanatory) %>% 
+    cox.zph() %>% 
+    {zph_result <<- .} %>% 
+    plot(var=5)
+
+zph_result
+```
+
+
+
+```{r}
+### bad
+model = coxph(Surv(time_mon, Death) ~ growth_tertile1 + 
+                 growth_tertile2 + growth_tertile3 + 
+                 decay_tertile1 + decay_tertile2 +
+                 decay_tertile3 + remainder, data = t_df, iter.max= 1000)
+
+# Extract hazard ratios
+tibble::tibble(exp(model$coef))
+summary(model)
+
+```
+
+
+- By growth group
+
+```{r}
+t_df$g_group = NA
+t_df$g_group[t_df$growth_tertile1 == 1] = "growth_tertile1"
+t_df$g_group[t_df$growth_tertile2 == 1] = "growth_tertile2"
+t_df$g_group[t_df$growth_tertile3 == 1] = "growth_tertile3"
+t_df$g_group[t_df$remainder == 1] = "g_remainder"
+
+g_t_df = t_df[!is.na(t_df$g_group), ]
+
+g_t_df$g_group = as.factor(g_t_df$g_group)
+```
+
+```{r}
+
+## g-3 only
+library(finalfit)
+dependent = "Surv(time_mon, Death)"
+explanatory = c("Sex", "Age","g_group")
+
+g_t_df %>%
+  finalfit(dependent, explanatory)
+
+g_t_df %>% 
+    finalfit(dependent, explanatory, add_dependent_label = FALSE) %>% 
+    rename("Death" = label) %>% 
+    rename(" " = levels) %>% 
+    rename("  " = all)
+
+
+```
+
+
+
+```{r}
+model = coxph(Surv(time_mon, Death) ~ g_group, data = g_t_df, iter.max = 1000)
+
+exp(model$coef)
+
+```
+
+- By decay group
+
+```{r}
+t_df$d_group = NA
+t_df$d_group[t_df$decay_tertile1 == 1] = "decay_tertile1"
+t_df$d_group[t_df$decay_tertile2 == 1] = "decay_tertile2"
+t_df$d_group[t_df$decay_tertile3 == 1] = "decay_tertile3"
+t_df$d_group[t_df$remainder == 1] = "d_remainder"
+
+d_t_df = t_df[!is.na(t_df$d_group), ]
+
+d_t_df$d_group = as.factor(d_t_df$d_group)
+```
+
+```{r}
+model = coxph(Surv(time_mon, Death) ~ d_group, data = d_t_df, iter.max = 1000)
+
+exp(model$coef)
+
+```
+
+- By remainder group
+
+```{r}
+model = coxph(Surv(time_mon, Death) ~ remainder, data = t_df, iter.max = 1000)
+
+exp(model$coef)
+```
+
+
+```{r}
+
+## bad
+# Add a new column for growth and decay groups
+tt_df <- t_df %>%
+  mutate(
+    growth_group = case_when(
+      growth_tertile1 == 1 ~ "growth_tertile1",
+      growth_tertile2 == 1 ~ "growth_tertile2",
+      growth_tertile3 == 1 ~ "growth_tertile3",
+      TRUE ~ "none"
+    ),
+    decay_group = case_when(
+      decay_tertile1 == 1 ~ "decay_tertile1",
+      decay_tertile2 == 1 ~ "decay_tertile2",
+      decay_tertile3 == 1 ~ "decay_tertile3",
+      TRUE ~ "none"
+    )
+  ) 
+
+# Identify patients who belong to both growth and decay groups
+tt_df <- tt_df %>%
+  mutate(
+    both_growth_decay = ifelse(growth_group != "none" & decay_group != "none", 1, 0)
+  )
+
+# Create a new combined group variable
+tt_df <- tt_df %>%
+  mutate(
+    combined_group = case_when(
+      both_growth_decay == 1 ~ "both_growth_decay",
+      growth_group != "none" ~ as.character(growth_group),
+      decay_group != "none" ~ as.character(decay_group),
+      remainder == 1 ~ "remainder",
+      TRUE ~ "none"
+    )
+  )
+# Fit the Cox proportional hazards model with the combined group variable
+model <- coxph(Surv(time_mon, Death) ~ combined_group, data = tt_df)
+
+# Print the summary of the model
+summary(model)
+
+```
+
+######################### penalized regression methods
+
+```{R}
+## penalized regression methods
+## fit a LASSO-penalized Cox proportional hazards model
+## shrink the coefficients towards zero, help improve the stability of the estimates in our cases with small sample sizes.
+
+library(glmnet)
+X = t_df[, c("growth_tertile1", "growth_tertile2", "growth_tertile3",
+              "decay_tertile1", "decay_tertile2", "decay_tertile3", "remainder")]
+
+X = as.matrix(X)  # Convert the data frame to a matrix
+
+Y = Surv(t_df$time_mon, t_df$Death)
+
+set.seed(123)  # For reproducibility
+cv_fit = cv.glmnet(x = X, y = Y, family = "cox", alpha = 1)
+
+plot(cv_fit)
+
+optimal_lambda = cv_fit$lambda.min
+coef(cv_fit, s = optimal_lambda)
+
+```
+
+```{R}
+coefficients <- c(-1.3961258, -0.8303949, 2.7472011, 0, -0.7827922, 0, 0.3815424)
+hazard_ratios <- exp(coefficients)
+hazard_ratios
+
+
+
+```
+
+
+```{r}
+t_df11$remainder = ifelse(is.na(t_df11$log_g) & is.na(t_df11$log_d), 1, 0)
+```
+
+```{r}
+t_df22 = t_df11[!is.na(t_df11$Death), ]
+
+t_df22$group = replace(t_df22$group, is.na(t_df22$group), "remainder")
+
+
+t_df22 = t_df22 %>%
+  mutate(across(group, ~ as.integer(. == "low decay"), .names = "low_decay"),
+         across(group, ~ as.integer(. == "high decay"), .names = "high_decay"),
+         across(group, ~ as.integer(. == "low growth"), .names = "low_growth"),
+         across(group, ~ as.integer(. == "high growth"), .names = "high_growth"),
+         across(group, ~ as.integer(. == "yoyo"), .names = "yoyo"),
+         across(group, ~ as.integer(. == "remainder"), .names = "remainder"))
+
+
+```
+
+```{r}
+
+# Create a new binary column based on the existing column
+t_df22$decay <- ifelse(t_df22$group %in% c("low decay", "high decay"), 1, 0)
+t_df22$growth <- ifelse(t_df22$group %in% c("low growth", "high growth"), 1, 0)
+
+
+```
+
+
+```{R}
+#model = coxph(Surv(fu_date, Death) ~ low_decay + high_decay+
+ #               low_growth + high_growth +
+  #              yoyo + remainder, data = t_df22)
+
+model = coxph(Surv(fu_date, Death) ~ group, data = t_df22)
+summary(model)
+
+```
+
+
+```{R}
+## penalized regression methods
+## fit a LASSO-penalized Cox proportional hazards model
+## shrink the coefficients towards zero, help improve the stability of the estimates in our cases with small sample sizes.
+
+library(glmnet)
+X = t_df22[, c("low_decay", "high_decay", "low_growth",
+              "high_growth", "yoyo")]
+
+X = as.matrix(X)  # Convert the data frame to a matrix
+
+Y = Surv(t_df22$time_mon, t_df22$Death)
+
+set.seed(123)  # For reproducibility
+cv_fit = cv.glmnet(x = X, y = Y, family = "cox", alpha = 0)
+
+plot(cv_fit)
+
+optimal_lambda = cv_fit$lambda.min
+coef(cv_fit, s = optimal_lambda)
+exp(coef(cv_fit, s = optimal_lambda))
+
+```
+
+```{r}
+# Number of bootstrap samples
+B = 5000
+
+# Initialize a matrix to store the bootstrap results
+bootstrap_results = matrix(NA, nrow = B, ncol = ncol(X))
+colnames(bootstrap_results) <- colnames(X)
+
+# Perform the bootstrap
+set.seed(123)  # For reproducibility
+for (b in 1:B) {
+  # Sample with replacement from the rows of X and Y
+  bootstrap_rows = sample(1:nrow(X), replace = TRUE)
+  X_boot = X[bootstrap_rows, ]
+  Y_boot = Y[bootstrap_rows]
+  
+  # Fit the model to the bootstrap sample
+  cv_fit_boot = try(cv.glmnet(x = X_boot, y = Y_boot, family = "cox", alpha = 0), silent = TRUE)
+  
+  # If an error occurred during fitting, skip this bootstrap sample
+  if (class(cv_fit_boot) == "try-error") {
+    next
+  }
+  
+  optimal_lambda_boot = cv_fit_boot$lambda.min
+  
+  # Get coefficients and convert them into a regular numeric vector
+  coefs = as.numeric(coef(cv_fit_boot, s = optimal_lambda_boot))
+  names(coefs) = rownames(coef(cv_fit_boot, s = optimal_lambda_boot))
+  
+  # If a variable is excluded from the model in a particular bootstrap sample,
+  # its coefficient will not be present in the coefs vector.
+  # We create a named numeric vector with names matching the column names of bootstrap_results.
+  # If a coefficient is not present in coefs, it will be assigned NA in the results vector.
+  results = rep(NA, ncol(X))
+  names(results) = colnames(X)
+  results[names(coefs)[-1]] = coefs[names(coefs)[-1]]  # Exclude the intercept
+  
+  # Store the coefficients
+  bootstrap_results[b, ] = results
+}
+
+# Calculate the 2.5% and 97.5% quantiles of the bootstrap results
+CI_lower = apply(bootstrap_results, 2, function(x) quantile(x, probs = 0.025, na.rm = TRUE))
+CI_upper = apply(bootstrap_results, 2, function(x) quantile(x, probs = 0.975, na.rm = TRUE))
+
+data.frame(CI_lower, CI_upper)
+
+```
+
+```{r}
+# Number of bootstrap samples, non-parametric
+B = 2000
+
+# Initialize a matrix to store the bootstrap results
+bootstrap_results = matrix(NA, nrow = B, ncol = ncol(X))
+colnames(bootstrap_results) <- colnames(X)
+
+# Perform the bootstrap
+set.seed(123)  # For reproducibility
+for (b in 1:B) {
+  # Sample with replacement from the rows of X and Y
+  bootstrap_rows = sample(1:nrow(X), replace = TRUE)
+  X_boot = X[bootstrap_rows, ]
+  Y_boot = Y[bootstrap_rows]
+  
+  # Fit the model to the bootstrap sample
+  cv_fit_boot = try(cv.glmnet(x = X_boot, y = Y_boot, family = "cox", alpha = 0), silent = TRUE)
+  
+  # If an error occurred during fitting, skip this bootstrap sample
+  if (class(cv_fit_boot) == "try-error") {
+    next
+  }
+  
+  optimal_lambda_boot = cv_fit_boot$lambda.min
+  
+  # Get coefficients and convert them into a regular numeric vector
+  coefs = as.numeric(coef(cv_fit_boot, s = optimal_lambda_boot))
+  names(coefs) = rownames(coef(cv_fit_boot, s = optimal_lambda_boot))
+  
+  # If a variable is excluded from the model in a particular bootstrap sample,
+  # its coefficient will not be present in the coefs vector.
+  # We create a named numeric vector with names matching the column names of bootstrap_results.
+  # If a coefficient is not present in coefs, it will be assigned NA in the results vector.
+  results = setNames(rep(NA, ncol(X)), colnames(X))
+  results[names(coefs)[-1]] = coefs[names(coefs)[-1]]  # Exclude the intercept
+  
+  # Store the coefficients
+  bootstrap_results[b, ] = results
+}
+
+# Calculate the 2.5% and 97.5% quantiles of the bootstrap results
+CI_lower = apply(bootstrap_results, 2, function(x) quantile(x, probs = 0.025, na.rm = TRUE))
+CI_upper = apply(bootstrap_results, 2, function(x) quantile(x, probs = 0.975, na.rm = TRUE))
+
+# Print the confidence intervals
+data.frame(Coefficient = colnames(bootstrap_results), CI_lower, CI_upper)
+
+
+
+```
+```{r}
+# Fit the model to the observed data
+fit = survreg(Surv(time_mon, Death) ~ low_decay + 
+                 high_decay + low_growth + 
+                 high_growth + yoyo, data = t_df22)#, dist = "exponential")
+
+# Number of bootstrap samples
+B = 2000 
+
+# Initialize a matrix to store the bootstrap results
+bootstrap_results = matrix(NA, nrow = B, ncol = length(coef(cv_fit, s = optimal_lambda)))
+colnames(bootstrap_results) <- names(coef(cv_fit, s = optimal_lambda))
+
+# Parametric bootstrap
+set.seed(123)  # For reproducibility
+for (b in 1:B) {
+# Generate bootstrap response
+Y_boot = rweibull(nrow(t_df22), shape = coef(fit)[1], 
+                  scale = exp(coef(fit)[2] * t_df22$low_decay + coef(fit)[3] * t_df22$high_decay + coef(fit)[4] * t_df22$low_growth + coef(fit)[5] * t_df22$high_growth + coef(fit)[6] * t_df22$yoyo))
+
+# Create a survival object with the bootstrap times and original censoring statuses
+Y_boot = Surv(Y_boot, t_df22$Death)
+
+# Fit the model to the bootstrap sample
+# Fit the model to the bootstrap sample
+cv_fit_boot = cv.glmnet(x = X, y = Y_boot, family = "cox", alpha = 0)
+
+# Check if cv_fit_boot is a valid model object
+if (inherits(cv_fit_boot, "try-error")) {
+  print(paste("Error on bootstrap iteration", b))
+  next
+}
+  
+# Store the coefficients
+bootstrap_results[b, ] = as.numeric(coef(cv_fit_boot, s = optimal_lambda))
+}
+
+# Calculate the 2.5% and 97.5% quantiles of the bootstrap results
+CI_lower = apply(bootstrap_results, 2, function(x) quantile(x, probs = 0.025, na.rm = TRUE))
+CI_upper = apply(bootstrap_results, 2, function(x) quantile(x, probs = 0.975, na.rm = TRUE))
+
+# Print the confidence intervals
+data.frame(Coefficient = colnames(bootstrap_results), CI_lower, CI_upper)
+
+
+
+```
+
+
+
+
+```{r}
+# Exponentiate the coefficients and their confidence intervals to get hazard ratios and their CIs
+HR = exp(coef(cv_fit, s = optimal_lambda))
+CI_lower_HR = exp(CI_lower)
+CI_upper_HR = exp(CI_upper)
+
+# Print the hazard ratios and their confidence intervals
+HR
+CI_lower_HR
+CI_upper_HR
+
+
+```
+
+##### Part 2.
+
+- longituinal plot
+
+```{r}
+t_df = read.csv("treat_combine.csv", sep = ",", header = TRUE)
+
+long_data = merge(qlf, t_df, by = 'name', all = TRUE)
+
+long_data$date = as.Date(long_data$VISITDTN, format = "%d%b%Y")
+
+long_data$n_date <- as.numeric(long_data$date)
+
+long_data$log_date = log(long_data$n_date)
+long_data$log_qlf = log(long_data$size)
+
+long_data = long_data[!is.na(long_data$Age), ]
+
+```
+
+```{R}
+long_data$treat_comb_V1V2 <- gsub(
+  "HiPD_V1V2\\+CsA_V1V2\\+AZT_V1V2\\+MMF_V1V2\\+IVIg_V1V2\\+RTX_V1V2\\+ISswitch_V1V2",
+  "HiPD_V1V2+CsA_V1V2+AZT_V1V2+others",
+  long_data$treat_comb_V1V2)
+
+long_data$treat_comb_V1V2 <- gsub("CsA_V1V2\\+MTX_V1V2\\+ISswitch_V1V2", 
+                                 "CsA_V1V2+MTX_V1V2+others",
+                                 long_data$treat_comb_V1V2)
+
+
+
+long_data$treat_comb_V1V2 <- gsub("CsA_V1V2\\+Tac_V1V2\\+MTX_V1V2\\+IVIg_V1V2\\+ISswitch_V1V2", 
+                                 "CsA_V1V2+MTX_V1V2+others",
+                                 long_data$treat_comb_V1V2)
+
+long_data$treat_comb_V1V2 <- gsub("HiPD_V1V2\\+CsA_V1V2\\+ISswitch_V1V2", 
+                                 "HiPD_V1V2+CsA_V1V2+others",
+                                 long_data$treat_comb_V1V2)
+
+long_data$treat_comb_V1V2 <- gsub("HiPD_V1V2\\+CsA_V1V2\\+MTX_V1V2", 
+                                 "HiPD_V1V2+CsA_V1V2+others",
+                                 long_data$treat_comb_V1V2)
+
+long_data$treat_comb_V1V2 <- gsub("HiPD_V1V2\\+CsA_V1V2\\+CTX_V1V2\\+AZT_V1V2\\+ISswitch_V1V2", 
+                                 "HiPD_V1V2+CsA_V1V2+AZT_V1V2+others",
+                                 long_data$treat_comb_V1V2)
+
+long_data$treat_comb_V1V2 <- gsub("HiPD_V1V2\\+CsA_V1V2\\+AZT_V1V2\\+MTX_V1V2\\+ISswitch_V1V2", 
+                                 "HiPD_V1V2+CsA_V1V2+AZT_V1V2+others",
+                                 long_data$treat_comb_V1V2)
+
+long_data$treat_comb_V1V2 <- gsub("HiPD_V1V2\\+CTX_V1V2\\+AZT_V1V2\\+IVIg_V1V2\\+ISswitch_V1V2", 
+                                 "HiPD_V1V2+CTX_V1V2++others",
+                                 long_data$treat_comb_V1V2)
+
+```
+
+
+```{r}
+long_data$treatment <- as.factor(long_data$treat_comb_V1V2)
+long_data = long_data[!is.na(long_data$treatment), ]
+
+
+lme_model <- lmer(log_qlf ~ log_date + Age + Sex + treatment  + (1 | name), data = long_data)
+
+```
+
+```{R}
+
+# Load the ggeffects package
+library(ggeffects)
+library(RColorBrewer)
+
+# Create a custom color palette with 30 colors
+custom_palette <- colorRampPalette(brewer.pal(9, "Set1"))(30)
+
+
+
+# Generate predicted values
+predicted_data <- ggpredict(lme_model, terms = c("log_date [all]", "treatment"))
+
+# Visualize the results
+plot(predicted_data, colors = custom_palette) +
+  theme_minimal() +
+  labs(title = "Predicted Tumor Sizes",
+       x = "Visit Date",
+       y = "Tumor Size",
+       color = "Treatment")
+
+```
+
+```{r}
+library(ggplot2)
+
+# Add the model predictions to the long_data dataframe
+# Extract fixed effect predictions
+fixed_effects_pred = predict(lme_model, level = 0)
+
+# Calculate random effect predictions
+random_effects_pred = as.numeric(ranef(lme_model, postVar = FALSE)[[1]][, 1])
+
+# Add fixed and random effect predictions
+overall_pred = fixed_effects_pred + rep(random_effects_pred, each = nrow(long_data) / length(random_effects_pred))
+
+# Add the overall predictions to the long_data dataframe
+long_data$predicted_tumor_size1 = overall_pred
+```
+
+```{r}
+ggplot(long_data, aes(x = date, y = log_qlf)) +
+  geom_line(aes(color = "Observed")) +
+  geom_line(aes(y = predicted_tumor_size1, color = "Predicted")) +
+  facet_wrap(~ name) +
+  labs(color = "Outcome") +
+  theme(legend.position = "bottom")
+
+```
+
+
+```{r}
+# First, add the model predictions to the new_data dataframe
+#long_data$predicted_tumor_size <- predict(lme_model, long_data)
+long_data$predicted_tumor_size <- predict(lme_model, re.form = NA)
+
+```
+
+
+```{R}
+library(ggplot2)
+
+# Find the last observation for each subject
+last_obs <- long_data %>%
+  group_by(name) %>%
+  filter(date == max(date))
+
+ggplot(long_data, aes(x = date, y = predicted_tumor_size, group = name, color = treatment)) +
+  geom_line() +
+  geom_point() +
+  scale_color_manual(values = custom_palette) +
+  theme_minimal() +
+  labs(title = "Predicted Tumor Sizes",
+       x = "Visit Date",
+       y = "Tumor Size",
+       color = "Treatment") +
+  geom_text(data = last_obs, aes(label = name), hjust = -0.1, vjust = 0.5, size = 3, check_overlap = TRUE)
+
+
+```
+
+
+
+```{r}
+# Create the longitudinal plot with observed data and model predictions
+longitudinal_plot <- ggplot() +
+  geom_line(data = long_data, aes(x = date, y = log_qlf, group = name, color = treatment), alpha = 0.5) +
+  geom_line(data = long_data, aes(x = date, y = predict(lme_model), group = name, color = treatment), linetype = "dashed", size = 1) +
+  theme_minimal() +
+  labs(title = "Longitudinal Plot of Tumor Size (Observed and Predicted)",
+       x = "Visit Date",
+       y = "Tumor Size",
+       color = "Treatment")
+
+print(longitudinal_plot)
+
+```
+
+
+- Waterfall plot.
+
+```{r}
+
+water_df_overall = t_df[!(t_df$selectedFit %in% c("not fit")), ]
+
+data1 <- water_df_overall %>%
+  mutate(group = ifelse(change < 0, "dx", "gx")) %>%
+  arrange(group, desc(change))
+
+data1$marker <- NA # Default marker shape
+#data1$marker[data1$name %in% c(66)] <- "gdphi group" # Replace with your specific IDs for cross marker
+data1$marker[data1$name %in% c(28,7,2,69,39,35,76,42,56)] <- "QLF Score: No 20% differed" # Replace with your specific IDs for star marker
+data1$marker[data1$name %in% c(17, 44, 6, 51, 16, 40, 71, 66, 43, 70)] <- "yoyo effect (all convex)" 
+
+#yoyo_id <- which(data$name == 66)
+#no_fit_id = which(data$name == 71)
+#no_20_start <- which(data$ID == 1)
+#no_20_end <- which(data$ID == 9)
+data1 <- data1 %>% 
+  mutate(selectedFit = recode(selectedFit, "2 evals not 20% diff" = "stable"))
+
+
+
+waterfall_plot = ggplot(data1, aes(x = reorder(name, change), y = change)) +
+  geom_col(aes(fill = selectedFit), width = 0.8) +
+  labs(
+    title = "Waterfall Plot",
+    x = "ID",
+    y = "Change in Overall QLF Score"
+  ) +
+  geom_point(aes(shape = marker, color = marker), size = 4, na.rm = TRUE) +
+  scale_shape_manual(values = c("QLF Score: No 20% differed" = 8, "yoyo effect (all convex)" = 5)) +
+  scale_color_manual(values = c("QLF Score: No 20% differed" = "black", "yoyo effect (all convex)" = "black"))+
+  scale_fill_manual(values = c("gx" = "firebrick3", "dx" = "forestgreen", "stable" = "goldenrod1", "gd" = "steelblue1", "gdphi" = "purple1"))+                  
+  theme_minimal() +
+  theme_grey(base_size = 22) +
+  #theme(axis.text.x = element_text(angle = 45, hjust = 1))+
+  theme(axis.text = element_text(size = 10),  # Increase size of side labels
+        legend.position = "right")# Rotate x-axis labels by 45 degrees
+
+  #geom_text(data = data.frame(x = c(10, 40), y = c(-15, 15), label = c("dx", "gx")), aes(x, y, label = label), inherit.aes = FALSE, vjust = 0, hjust = 0, size = 10, color = "black")
+
+
+
+print(waterfall_plot)
+
+```
+
+
+### waterfall plot by treatment
+
+```{R}
+water_df = t_df[!(t_df$selectedFit %in% c("not fit", "2 evals not 20% diff")), ]
+water_df = water_df[!is.na(water_df$Death), ]
+
+```
+
+```{R}
+water_df$treat_comb_V1V2 <- gsub(
+  "HiPD_V1V2\\+CsA_V1V2\\+AZT_V1V2\\+MMF_V1V2\\+IVIg_V1V2\\+RTX_V1V2\\+ISswitch_V1V2",
+  "HiPD_V1V2+CsA_V1V2+AZT_V1V2+others",
+  water_df$treat_comb_V1V2)
+
+water_df$treat_comb_V1V2 <- gsub("CsA_V1V2\\+MTX_V1V2\\+ISswitch_V1V2", 
+                                 "CsA_V1V2+MTX_V1V2+others",
+                                 water_df$treat_comb_V1V2)
+
+
+
+water_df$treat_comb_V1V2 <- gsub("CsA_V1V2\\+Tac_V1V2\\+MTX_V1V2\\+IVIg_V1V2\\+ISswitch_V1V2", 
+                                 "CsA_V1V2+MTX_V1V2+others",
+                                 water_df$treat_comb_V1V2)
+
+water_df$treat_comb_V1V2 <- gsub("HiPD_V1V2\\+CsA_V1V2\\+ISswitch_V1V2", 
+                                 "HiPD_V1V2+CsA_V1V2+others",
+                                 water_df$treat_comb_V1V2)
+
+water_df$treat_comb_V1V2 <- gsub("HiPD_V1V2\\+CsA_V1V2\\+MTX_V1V2", 
+                                 "HiPD_V1V2+CsA_V1V2+others",
+                                 water_df$treat_comb_V1V2)
+
+water_df$treat_comb_V1V2 <- gsub("HiPD_V1V2\\+CsA_V1V2\\+CTX_V1V2\\+AZT_V1V2\\+ISswitch_V1V2", 
+                                 "HiPD_V1V2+CsA_V1V2+AZT_V1V2+others",
+                                 water_df$treat_comb_V1V2)
+
+water_df$treat_comb_V1V2 <- gsub("HiPD_V1V2\\+CsA_V1V2\\+AZT_V1V2\\+MTX_V1V2\\+ISswitch_V1V2", 
+                                 "HiPD_V1V2+CsA_V1V2+AZT_V1V2+others",
+                                 water_df$treat_comb_V1V2)
+
+water_df$treat_comb_V1V2 <- gsub("HiPD_V1V2\\+CTX_V1V2\\+AZT_V1V2\\+IVIg_V1V2\\+ISswitch_V1V2", 
+                                 "HiPD_V1V2+CTX_V1V2++others",
+                                 water_df$treat_comb_V1V2)
+```
+
+
+
+```{r}
+water_df$log_d <- log(water_df$d)
+```
+
+
+```{r}
+water_df$marker <- NA # Default marker shape
+#data1$marker[data1$name %in% c(66)] <- "gdphi group" # Replace with your specific IDs for cross marker
+#water_df$marker[water_df$name %in% c(28,7,2,69,39,35,76,42,56)] <- "QLF Score: No 20% differed" # Replace with your specific IDs for star marker
+water_df$marker[water_df$name %in% c(17, 44, 6, 51, 16, 40, 71, 66, 43, 70)] <- "yoyo effect (all convex)"  #specific IDs for star marker
+
+
+
+waterfall_plot = ggplot(water_df, aes(x = reorder(name, change), y = change)) +
+  geom_col(aes(fill = treat_comb_V1V2), width = 0.8) +
+  geom_label(
+    aes(x = 10, y = -15, label = paste("dx")),
+    label.padding = unit(1, "lines"),
+    label.size = 1,
+    color = "purple"
+  ) +
+  geom_label(
+    aes(x = 38, y = 12, label = paste("gx")),
+    label.padding = unit(1, "lines"),
+    label.size = 1,
+    color = "purple"
+  ) +
+  #scale_fill_manual(values = c("T1" = "red", "T2" = "blue", "T3" = "green")) +
+  geom_point(aes(shape = marker, color = marker), size = 4, na.rm = TRUE) +
+  scale_shape_manual(values = c("gdphi group" = 5, "yoyo effect (all convex)" = 8)) +
+  scale_color_manual(values = c("gdphi group" = "black", "yoyo effect (all convex)" = "black")
+  ) +
+  labs(
+    title = "Waterfall Plot",
+    x = "ID",
+    y = "Change in Overall QLF Score",
+    fill = "Treatment Combination"
+  ) +
+  theme_minimal() +
+  theme_grey(base_size = 20) +
+  #theme(axis.text.x = element_text(angle = 45, hjust = 1))+
+  theme(axis.text = element_text(size = 12),  # Increase size of side labels
+        legend.position = "right")# Rotate x-axis labels by 45 degrees
+  #geom_text(data = data.frame(x = c(10, 40), y = c(-15, 15), label = c("dx", "gx")), aes(x, y, label = label), inherit.aes = FALSE, vjust = 0, hjust = 0, size = 10, color = "black")
+
+
+
+print(waterfall_plot)
+
+```
+
+```{r}
+### summary stats by treatments
+
+library(dplyr)
+
+# Calculate summary statistics by treatment group
+summary_stats <- water_df %>%
+  group_by(treat_comb_V1V2) %>%
+  summarise(
+    patient = n(),  # Count the number of rows (patients) in each group
+    QLF_baseline_mean = mean(initial_size),
+    QLF_overall_change_mean = mean(change),
+    duration_mean = mean(fu_date),
+  )
+
+# View the summary statistics
+print(summary_stats)
+
+
+
+
+
+```
+
+
+
+```{r}
+t_df$treat_comb_V1V2 <- gsub(
+  "HiPD_V1V2\\+CsA_V1V2\\+AZT_V1V2\\+MMF_V1V2\\+IVIg_V1V2\\+RTX_V1V2\\+ISswitch_V1V2",
+  "HiPD_V1V2+CsA_V1V2+AZT_V1V2+others",
+  t_df$treat_comb_V1V2)
+
+t_df$treat_comb_V1V2 <- gsub("CsA_V1V2\\+MTX_V1V2\\+ISswitch_V1V2", 
+                                 "CsA_V1V2+MTX_V1V2+others",
+                                 t_df$treat_comb_V1V2)
+
+
+
+t_df$treat_comb_V1V2 <- gsub("CsA_V1V2\\+Tac_V1V2\\+MTX_V1V2\\+IVIg_V1V2\\+ISswitch_V1V2", 
+                                 "CsA_V1V2+MTX_V1V2+others",
+                                 t_df$treat_comb_V1V2)
+
+t_df$treat_comb_V1V2 <- gsub("HiPD_V1V2\\+CsA_V1V2\\+ISswitch_V1V2", 
+                                 "HiPD_V1V2+CsA_V1V2+others",
+                                 t_df$treat_comb_V1V2)
+
+t_df$treat_comb_V1V2 <- gsub("HiPD_V1V2\\+CsA_V1V2\\+MTX_V1V2", 
+                                 "HiPD_V1V2+CsA_V1V2+others",
+                                 t_df$treat_comb_V1V2)
+
+t_df$treat_comb_V1V2 <- gsub("HiPD_V1V2\\+CsA_V1V2\\+CTX_V1V2\\+AZT_V1V2\\+ISswitch_V1V2", 
+                                 "HiPD_V1V2+CsA_V1V2+AZT_V1V2+others",
+                                 t_df$treat_comb_V1V2)
+
+t_df$treat_comb_V1V2 <- gsub("HiPD_V1V2\\+CsA_V1V2\\+AZT_V1V2\\+MTX_V1V2\\+ISswitch_V1V2", 
+                                 "HiPD_V1V2+CsA_V1V2+AZT_V1V2+others",
+                                 t_df$treat_comb_V1V2)
+
+t_df$treat_comb_V1V2 <- gsub("HiPD_V1V2\\+CTX_V1V2\\+AZT_V1V2\\+IVIg_V1V2\\+ISswitch_V1V2", 
+                                 "HiPD_V1V2+CTX_V1V2++others",
+                                 t_df$treat_comb_V1V2)
+```
+
+
+
+
+```{r}
+treat <- read.csv("~/Desktop/MS report/data/Data-selected 2/IIMQILD_221104_Box.csv", sep = ",", header = TRUE)
+
+colnames(treat)[which(names(treat) == "Patient_ID")] = "SUBJID"
+
+treat$name = as.numeric(factor(treat$SUBJID, 
+                  levels=unique(treat$SUBJID)))
+```
+
+```{r}
+
+
+library(dplyr)
+
+treat1 <- merge(treat, tt_df, by = "SUBJID", all = TRUE)
+
+```
+
+
+```{r}
+#model = coxph(Surv(time_mon, Death.y) ~ HiPD_V1V2 + CsA_V1V2 + CTX_V1V2 + AZT_V1V2 +
+ #               Tac_V1V2 + MMF_V1V2 + MTX_V1V2 + IVIg_V1V2 + RTX_V1V2 + 
+  #              ISswitch_V1V2 + Age.y + Sex.y, data = treat1)
+
+model = coxph(Surv(time_mon, Death) ~ treat_comb_V1V2 + Age + Sex + growth_tertile1 +
+                growth_tertile2 + growth_tertile3 + decay_tertile1 + 
+                decay_tertile2 + decay_tertile3 + remainder, data = t_df)
+
+# Extract hazard ratios
+tibble::tibble(exp(model$coef))
+summary(model)
+
+
+```
+
+
+```{r}                      
+
+X = t_df[, c("treat_comb_V1V2", "Age", "Sex", 
+               "growth_tertile1", "growth_tertile2", "growth_tertile3",
+              "decay_tertile1", "decay_tertile2", "decay_tertile3", "remainder")]
+              
+
+X = as.matrix(X)  # Convert the data frame to a matrix
+
+Y = Surv(t_df$time_mon, t_df$Death)
+
+set.seed(123)  # For reproducibility
+cv_fit = cv.glmnet(x = X, y = Y, family = "cox", alpha = 1)
+
+plot(cv_fit)
+
+optimal_lambda = cv_fit$lambda.min
+coef(cv_fit, s = optimal_lambda)
+
+
+
+```
+                      
+                      
+
+```{r}                      
+
+X = treat1[, c("HiPD_V1V2", "CsA_V1V2", "CTX_V1V2","AZT_V1V2", 
+                      "Tac_V1V2", "MMF_V1V2", "MTX_V1V2", "IVIg_V1V2",
+                      "RTX_V1V2", "ISswitch_V1V2", "Age.y", "Sex.y", 
+               "growth_tertile1", "growth_tertile2", "growth_tertile3",
+              "decay_tertile1", "decay_tertile2", "decay_tertile3", "remainder")]
+              
+
+X = as.matrix(X)  # Convert the data frame to a matrix
+
+Y = Surv(treat1$time_mon, treat1$Death.y)
+
+set.seed(123)  # For reproducibility
+cv_fit = cv.glmnet(x = X, y = Y, family = "cox", alpha = 1)
+
+plot(cv_fit)
+
+optimal_lambda = cv_fit$lambda.min
+coef(cv_fit, s = optimal_lambda)
+
+
+
+```
+
+```{r}
+a = c(1.21891234, 1.26898374, 0.85263132, -1.76744343, -0.59427534, 0, 0.19747051, 0, 0,
+      -2.98655196, 0.06667797, -0.40184424, -2.42092043, -2.56447048,
+      2.46664244, 0, -0.58974028, -1.04298533, 0.79686760)
+
+exp(a)
+
+```
+
+
+
+```{r}
+water_df$marker <- NA # Default marker shape
+#data1$marker[data1$name %in% c(66)] <- "gdphi group" # Replace with your specific IDs for cross marker
+#water_df$marker[water_df$name %in% c(28,7,2,69,39,35,76,42,56)] <- "QLF Score: No 20% differed" # Replace with your specific IDs for star marker
+water_df$marker[water_df$name %in% c(17, 44, 6, 51, 16, 40, 71, 66, 43, 70)] <- "yoyo effect (all convex)"  #specific IDs for star marker
+water_df$marker[water_df$name %in% c(18, 78, 6, 5)] <- "Top 4 treatment comb leads to lowest growth rate in QLF score over time"
+
+
+waterfall_plot = ggplot(water_df, aes(x = reorder(name, change), y = change)) +
+  geom_col(aes(fill = treat_comb_V1V2), width = 0.8) +
+  geom_label(
+    aes(x = 10, y = -15, label = paste("dx")),
+    label.padding = unit(1, "lines"),
+    label.size = 1,
+    color = "purple"
+  ) +
+  geom_label(
+    aes(x = 38, y = 12, label = paste("gx")),
+    label.padding = unit(1, "lines"),
+    label.size = 1,
+    color = "purple"
+  ) +
+  #scale_fill_manual(values = c("T1" = "red", "T2" = "blue", "T3" = "green")) +
+  geom_point(aes(shape = marker, color = marker), size = 4, na.rm = TRUE) +
+  scale_shape_manual(values = c("Top 4 treatment comb leads to lowest growth rate in QLF score over time" = 18, "yoyo effect (all convex)" = 8)) +
+  scale_color_manual(values = c("Top 4 treatment comb leads to lowest growth rate in QLF score over time" = "black", "yoyo effect (all convex)" = "black")
+  ) +
+  labs(
+    title = "Waterfall Plot",
+    x = "ID",
+    y = "Change in Overall QLF Score",
+    fill = "Treatment Combination"
+  ) +
+  theme_minimal() +
+  theme_grey(base_size = 17) +
+  #theme(axis.text.x = element_text(angle = 45, hjust = 1))+
+  theme(axis.text = element_text(size = 10),  # Increase size of side labels
+        legend.position = "right")# Rotate x-axis labels by 45 degrees
+  #geom_text(data = data.frame(x = c(10, 40), y = c(-15, 15), label = c("dx", "gx")), aes(x, y, label = label), inherit.aes = FALSE, vjust = 0, hjust = 0, size = 10, color = "black")
+
+
+
+print(waterfall_plot)
+```
+
+
