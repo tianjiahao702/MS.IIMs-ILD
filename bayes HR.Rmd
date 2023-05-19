@@ -7,147 +7,427 @@ output: html_document
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(dplyr)
+library(readr)
+library(tumgr)
+library(minpack.lm)
+library(survival)
+library(survminer)
+library(grid)
+library(lme4)
+library(rstanarm)
+library(bayesplot)
+library(loo)
 ```
 
 ````{r}
 
 # Create a new binary column based on the existing column
-t_df22$decay <- ifelse(t_df22$group %in% c("low decay", "high decay"), 1, 0)
-t_df22$growth <- ifelse(t_df22$group %in% c("low growth", "high growth"), 1, 0)
+t_df22$decay = ifelse(t_df22$group %in% c("low decay", "high decay"), 1, 0)
+t_df22$growth = ifelse(t_df22$group %in% c("low growth", "high growth"), 1, 0)
 
 
 ```
 
+
+```{r}
+## fit cox ph model
+cox_model = coxph(Surv(time_mon, Death) ~ group, data = t_df22, iter.max = 2000)
+
+summary(cox_model)
+```
+
+
+
+
 ```{R}
+
+# low_decay + high_decay + low_growth + high_growth + stable + yoyo
 
 # Define the prior
 # Fit the model
 library(rstanarm)
-fit <- stan_surv(Surv(time_mon, Death) ~ group,
-                 data = t_df22, basehaz = "weibull",
-               prior = normal(autoscale = T),
-               prior_intercept = normal(autoscale = T),
-               #prior_aux = cauchy(0, 5, autoscale = T),
-               chains = 2, iter = 2000, seed = 123,
-               prior_PD = F)
+prior_fit = stan_surv(Surv(time_mon, Death) ~ group,
+                data = t_df22, 
+                basehaz = "exp",
+                #prior = normal(autoscale = T),
+                #prior_intercept = normal(autoscale = T),
+                #prior_aux = cauchy(0, 5, autoscale = T),
+                #prior_PD = T,
+                cores = 4,
+                chains = 3, 
+                iter = 5000, 
+                seed = 123)
+```
 
-# Print the model summary
-print(fit)
+```{r}
+summary(mod1_weibull)
+prior_summary(mod1_weibull)
+```
 
 
+########################################################################################
 
+```{r}
+#mod1_exp <- update(prior_fit, basehaz = "exp")
+mod1_weibull <- update(prior_fit, basehaz = "weibull")
+mod1_gompertz <- update(prior_fit, basehaz = "gompertz")
+mod1_bspline <- update(prior_fit, basehaz = "bs")
+mod1_mspline1 <- update(prior_fit, basehaz = "ms")
+mod1_mspline2 <- update(prior_fit, basehaz = "ms", basehaz_ops = list(df = 9))
 
 ```
 
 ```{r}
-round(as.data.frame(summary(fit)), 2)
-
-
-```
-```{r}
-fit.stan.const <- update(fit, prior_PD = FALSE)
-```
-
-
-```{r}
-bayesplot_grid(mcmc_intervals(fit),
-                         mcmc_intervals(fit.stan.const),
-                         titles = c("Prior","Posterior"),
-                         xlim = c(-5,1),grid_args = list(nrow =2))
-          
-bayesplot_grid(mcmc_hist(fit),
-               mcmc_hist(fit.stan.const),
-               titles = c("Prior","Posterior"),
-               grid_args = list(nrow = 2))
-
-```
-
-
-```{r}
-add_cox_hr <- vline_at(exp(model$coefficients), color = "green")
-
-bayesplot_grid(
-  mcmc_hist(fit, pars = c("grouplow decay"),
-            transformations = exp, 
-            binwidth = 0.05) + add_cox_hr,
-  
-  mcmc_hist(fit.stan.const,
-            pars = c("grouplow decay"),
-            transformations = exp,
-            binwidth = 0.05) + add_cox_hr,
-  titles = c("Prior","Posterior"),
-  xlim = c(0,3),
-  grid_args = list(nrow = 2))
+loo_compare(loo(prior_fit),
+            loo(mod1_weibull),
+            loo(mod1_gompertz),
+            loo(mod1_bspline),
+            loo(mod1_mspline1),
+            loo(mod1_mspline2))
 
 
 ```
 
 
 ```{r}
+nd = data.frame(group = c("low decay",
+                          "high decay",
+                          "low growth",
+                          "high growth",
+                          "stable",
+                          "yoyo",
+                          "remainder"))
+head(nd)
 
-# weibull model
-fit.stan.weib <- update(fit.stan.const,
-                        basehaz = "weibull")
+ps <- posterior_survfit(prior_fit,
+                        newdata = nd,
+                        times = 0,
+                        extrapolate = TRUE,
+                        control = list(edist = 5))
+head(ps)
+```
+
+```{r}
+
+
+panel_labels <- c('1' = "low decay",
+                  '2' = "high decay",
+                  '3' = "low growth",
+                  '4' = "high growth",
+                  '5' = "stable",
+                  '6' =  "yoyo",
+                  '7' = "remainder")
+
+pps <- plot(ps) + facet_wrap(~ id, labeller = labeller(id = panel_labels))
 ```
 
 
 ```{r}
+ph <- posterior_survfit(mod1_weibull, newdata = nd, type = "haz")
+pl <- posterior_survfit(mod1_exp, newdata = nd, type = "loghaz")
 
-# cubic m-spline model (with df = 10)
-fit.stan.ms10 <- update(fit.stan.const,
-                        basehaz = "ms",
-                        prior_aux = dirichlet(1),
-                        basehaz_ops = list(df = 10))
+pph <- plot(ph) +
+  facet_wrap(~ id, labeller = labeller(id = panel_labels))
+ppl <- plot(pl) +
+  facet_wrap(~ id, labeller = labeller(id = panel_labels))
 
-# piecewise constant model (with df = 5)
-fit.stan.pw5 <- update(fit.stan.const,
-                       basehaz = "ms",
-                       prior_aux = dirichlet(1),
-                       basehaz_ops = list(degree = 0, df = 5))
-
-# piecewise constant model (with df = 10)
-fit.stan.pw10 <- update(fit.stan.const,
-                        basehaz = "ms",
-                        prior_aux = dirichlet(1),
-                        basehaz_ops = list(degree = 0, df = 10))
-```
-
-```{r}
-fits_stan <- list("Weibull" = fit.stan.const,
-                  "MS (df = 10)" = fit.stan.ms10,
-                  "PW (df = 5)" = fit.stan.pw5,
-                  "PW (df = 10)" = fit.stan.pw10
-)
-
-loos <- map(fits_stan, loo)
-loo_compare(loos)
 ```
 
 
-```{r}
-add_knots <- function(x) {
-  knots <- x$basehaz$knots
-  if (is.null(knots))
-    return(NULL)
-  geom_vline(xintercept = knots, color = "green", alpha = 0.5)
-  }
+########################################################################################
+```{R}
+## inspect the marginal prior distributions for log HR for all rate groups
+mcmc_intervals(prior_fit, pars = c("grouphigh growth",
+                                          "grouplow decay",
+                                          "grouplow growth",
+                                          "groupremainder",
+                                          "groupstable",
+                                          "groupyoyo",
+                                          "(Intercept)"))
 
-# generate the 'ps_check' plots
-plots <- map(fits_stan, ~ (ps_check(.) + add_knots(.)))
-# combine the plots
-bayesplot_grid(
-  plots = plots,
-  titles = names(fits_stan),
-  grid_args = list(ncol = 3))
+mcmc_intervals(prior_fit, pars = c("grouphigh growth",
+                                          "grouplow decay",
+                                          "grouplow growth",
+                                          "groupremainder",
+                                          "groupstable",
+                                          "groupyoyo"),
+               transformations = exp) + vline_at(1)
+
+###the plot of the marginal prior distribution for our HR shows very extreme values (no good)
+```
+
+```{R}
+## inspect the marginal prior distributions for log HR for all rate groups
+mcmc_intervals(prior_fit, pars = c("low_decay",
+                                          "high_decay",
+                                          "low_growth",
+                                          "high_growth",
+                                          "stable",
+                                          "yoyo",
+                                          "(Intercept)"))
+
+mcmc_intervals(prior_fit, pars = c("low_decay",
+                                          "high_decay",
+                                          "low_growth",
+                                          "high_growth",
+                                          "stable",
+                                          "yoyo"),
+               transformations = exp) + vline_at(1)
+
+###the plot of the marginal prior distribution for our HR shows very extreme values (no good)
+```
+
+
+
+```{R}
+plot(prior_fit, plotfun = "basehaz") ##no good
+plot(prior_fit, "dens_overlay")
+plot(prior_fit, "trace")
+```
+
+
+
+
+```{R}
+### upate prior
+mcmc_intervals(prior_fit, pars = c("grouphigh growth",
+                                          "grouplow decay",
+                                          "grouplow growth",
+                                          "groupremainder",
+                                          "groupstable",
+                                          "groupyoyo",
+                                          "(Intercept)")) ### still no good
+
+
+```
+
+```{R}
+### now conditional on our data
+fit = update(prior_fit, prior_PD = FALSE)
+print(fit, digits = 3)
+
+## much better 
+
 ```
 
 
 ```{R}
-#model = coxph(Surv(fu_date, Death) ~ low_decay + high_decay+
- #               low_growth + high_growth +
-  #              yoyo + remainder, data = t_df22)
+library(cowplot)
+## visualize the posterior results and compare to priors
 
-model = coxph(Surv(fu_date, Death) ~ group, data = t_df22)
-summary(model)
+bayesplot_grid(mcmc_intervals(prior_fit),
+               mcmc_intervals(fit),
+               titles = c("Prior","Posterior"))
+          
+bayesplot_grid(mcmc_hist(prior_fit),
+               mcmc_hist(fit),
+               titles = c("Prior","Posterior"),
+               grid_args = list(nrow = 2))
+
+## Here we see that our estimated posterior distributions are not at all incompatible with our prior beliefs. This is reassuring!!!!!
+
+```
+
+```{r}
+## harzad ratio
+## visually compare the prior and posterior for the estimated HR. 
+## For comparison also show the HR calculated using the Cox proportional hazards model (vertical red line)
+
+add_cox_hr = vline_at(exp(coef(cox_model)), color = "red")
+
+bayesplot_grid(mcmc_hist(prior_fit,
+                         pars = c("grouphigh growth",
+                                          "grouplow decay",
+                                          "grouplow growth",
+                                          "groupremainder",
+                                          "groupstable",
+                                          "groupyoyo"),
+                         transformations = exp,
+                         binwidth = 0.05) + add_cox_hr,
+               
+               mcmc_hist(fit,
+                         pars = c("grouphigh growth",
+                                          "grouplow decay",
+                                          "grouplow growth",
+                                          "groupremainder",
+                                          "groupstable",
+                                          "groupyoyo"),
+                         transformations = exp,
+                         binwidth = 0.05) + add_cox_hr,
+               titles = c("Prior","Posterior"),
+               xlim = c(0,3),
+               grid_args = list(nrow = 2))
+```
+
+
+```{r}
+## harzad ratio
+## visually compare the prior and posterior for the estimated HR. 
+## For comparison also show the HR calculated using the Cox proportional hazards model (vertical red line)
+
+add_cox_hr = vline_at(exp(coef(cox_model)), color = "red")
+
+bayesplot_grid(mcmc_hist(prior_fit,
+                         pars = c("low_decay",
+                                          "high_decay",
+                                          "low_growth",
+                                          "high_growth",
+                                          "stable",
+                                          "yoyo"),
+                         transformations = exp,
+                         binwidth = 0.05) + add_cox_hr,
+               
+               mcmc_hist(fit,
+                         pars = c("low_decay",
+                                          "high_decay",
+                                          "low_growth",
+                                          "high_growth",
+                                          "stable",
+                                          "yoyo"),
+                         transformations = exp,
+                         binwidth = 0.05) + add_cox_hr,
+               titles = c("Prior","Posterior"),
+               xlim = c(0,3),
+               grid_args = list(nrow = 2))
+```
+
+
+- Since this pattern is observed for all groups it might suggest that this is an issue with the estimated baseline hazard (i.e.(Intercept)) rather than the estimated effect of other groups. 
+- The exponential proportional hazards model assumes a constant baseline hazard, which may be unrealistic for this data i believe.... 
+- Need to consider a more flexible form for the baseline hazard, while still assuming proportional hazards for the effect of each rate groups.
+
+
+```{r}
+## model estimation
+
+# weibull model
+fit_weib = update(fit,
+                  basehaz = "weibull")
+
+# cubic m-spline model (with df = 5)
+fit_ms5 = update(fit,
+                 basehaz = "ms",
+                 basehaz_ops = list(df = 5))
+
+# cubic m-spline model (with df = 10)
+fit_ms10 = update(fit,
+                  basehaz = "ms",
+                  basehaz_ops = list(df = 10))
+
+# piecewise constant model (with df = 5)
+fit_pw5 = update(fit,
+                 basehaz = "ms",
+                 basehaz_ops = list(degree = 0, df = 5))
+
+# piecewise constant model (with df = 10)
+fit_pw10 = update(fit,
+                  basehaz = "ms",
+                  basehaz_ops = list(degree = 0, df = 10))
+
+fits_stan = list("Exp" = fit,
+                 "Weibull" = fit_weib,
+                 "MS (df = 5)" = fit_ms5,
+                 "MS (df = 10)" = fit_ms10,
+                 "PW (df = 5)" = fit_pw5,
+                 "PW (df = 10)" = fit_pw10)
+
+```
+
+
+
+```{R}
+plots = map(fits_stan, plot)
+
+bayesplot_grid(plots = plots,
+               ylim = c(0, 0.1),
+               titles = names(fits_stan),
+               grid_args = list(ncol = 3))
+
+## It is apparent from the plot that the constant baseline hazard (i.e. exponential model) is inappropriate 
+## it fails to capture any changes in the baseline hazard. 
+## the other baseline hazards quite capture changes in the baseline hazard over time
+```
+
+```{R}
+## For each model can compare the posterior estimate of the standardised survival curve to the Kaplan-Meier
+## This helps to assess how well each model fits the observed data. 
+
+# define helper function to add knot locations 
+add_knots = function(x) {
+  knots = x$basehaz$knots
+  if (is.null(knots))
+    return(NULL) 
+  geom_vline(xintercept = knots, color = "green", alpha = 0.5)
+}
+
+# generate the 'ps_check' 
+plots = map(fits_stan, ~ (ps_check(.) + add_knots(.)))
+
+# combine the plots
+bayesplot_grid(plots = plots,
+               titles = names(fits_stan),
+               grid_args = list(ncol = 3))
+
+## Again we see evidence that the constant (i.e. exponential) model fits very poorly. 
+## The Weibull model also appears no good. 
+## The remaining models appear to do reasonably well, although there is some evidence that the M-spline model with only 5 degrees of freedom may not provide sufficient flexibility.
+
+```
+
+
+```{r}
+## leave-one-out cross validation and modelcomparison based on the expected log predictive density
+
+loos = map(fits_stan, loo)
+loo_compare(loos)
+
+```
+
+```{r}
+round(as.data.frame(summary(mod1_exp)), 2)
+
+
+```
+
+##############brm
+
+
+```{r}
+prior1 <- normal(location = 0, scale = 10, autoscale = T)
+f1 = Surv(time_mon, Death) ~ tve(high_decay) + low_decay
+ 
+fit <- stan_surv(
+  f1,
+  data = sub_data,
+  basehaz = "exp",
+  prior = prior1,
+  chains = 4,
+  iter = 2000)
+
+
+
+```
+
+```{r}
+
+summary(fit)
+exp(fit$coefficients)
+
+plot(fit, "trace")
+
+
+```
+
+
+
+
+```{r}
+# Assuming your original dataframe is named 'your_data' and you want to select columns 'column1', 'column3', 'column6', and 'column8'
+sub_data <- t_df22[, c("time_mon", "Death", "name", "low_decay", "high_decay")]
+
+
 
 ```
