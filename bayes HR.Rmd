@@ -49,7 +49,7 @@ summary(cox_model)
 # Define the prior
 # Fit the model
 library(rstanarm)
-prior_fit = stan_surv(Surv(time_mon, Death) ~ group,
+prior_fit = stan_surv(Surv(time_mon, Death) ~ low_decay + high_decay + low_growth + high_growth + stable + yoyo,
                 data = t_df22, 
                 basehaz = "exp",
                 #prior = normal(autoscale = T),
@@ -63,8 +63,17 @@ prior_fit = stan_surv(Surv(time_mon, Death) ~ group,
 ```
 
 ```{r}
-summary(mod1_weibull)
-prior_summary(mod1_weibull)
+summary(prior_fit)
+prior_summary(prior_fit)
+
+# Assuming `fit` is the object returned by the stan_surv() function
+posterior_samples <- as.matrix(prior_fit)  # Extracts a matrix of posterior samples
+
+# Compute 95% credible intervals
+apply(posterior_samples, 2, quantile, probs = c(0.025, 0.975))
+
+# This returns a matrix with rownames '2.5%' and '97.5%' and column names for each parameter
+
 ```
 
 
@@ -77,6 +86,7 @@ mod1_gompertz <- update(prior_fit, basehaz = "gompertz")
 mod1_bspline <- update(prior_fit, basehaz = "bs")
 mod1_mspline1 <- update(prior_fit, basehaz = "ms")
 mod1_mspline2 <- update(prior_fit, basehaz = "ms", basehaz_ops = list(df = 9))
+mod1_AFT = update(prior_fit,  basehaz = "weibull-aft")
 
 ```
 
@@ -86,7 +96,8 @@ loo_compare(loo(prior_fit),
             loo(mod1_gompertz),
             loo(mod1_bspline),
             loo(mod1_mspline1),
-            loo(mod1_mspline2))
+            loo(mod1_mspline2),
+            loo(mod1_AFT))
 
 
 ```
@@ -102,7 +113,7 @@ nd = data.frame(group = c("low decay",
                           "remainder"))
 head(nd)
 
-ps <- posterior_survfit(prior_fit,
+ps <- posterior_survfit(mod1_AFT,
                         newdata = nd,
                         times = 0,
                         extrapolate = TRUE,
@@ -126,8 +137,8 @@ pps <- plot(ps) + facet_wrap(~ id, labeller = labeller(id = panel_labels))
 
 
 ```{r}
-ph <- posterior_survfit(mod1_weibull, newdata = nd, type = "haz")
-pl <- posterior_survfit(mod1_exp, newdata = nd, type = "loghaz")
+ph <- posterior_survfit(mod1_AFT, newdata = nd, type = "haz")
+pl <- posterior_survfit(mod1_AFT, newdata = nd, type = "loghaz")
 
 pph <- plot(ph) +
   facet_wrap(~ id, labeller = labeller(id = panel_labels))
@@ -183,9 +194,9 @@ mcmc_intervals(prior_fit, pars = c("low_decay",
 
 
 ```{R}
-plot(prior_fit, plotfun = "basehaz") ##no good
-plot(prior_fit, "dens_overlay")
-plot(prior_fit, "trace")
+plot(mod1_AFT, plotfun = "basehaz") ##no good
+plot(mod1_AFT, "dens_overlay")
+plot(mod1_AFT, "trace")
 ```
 
 
@@ -248,7 +259,7 @@ bayesplot_grid(mcmc_hist(prior_fit,
                          transformations = exp,
                          binwidth = 0.05) + add_cox_hr,
                
-               mcmc_hist(fit,
+               mcmc_hist(mod1_AFT,
                          pars = c("grouphigh growth",
                                           "grouplow decay",
                                           "grouplow growth",
@@ -387,36 +398,33 @@ loo_compare(loos)
 ```
 
 ```{r}
-round(as.data.frame(summary(mod1_exp)), 2)
+round(as.data.frame(summary(prior_fit)), 2)
 
 
 ```
 
-##############brm
+######################################################## brm
 
 
 ```{r}
-prior1 <- normal(location = 0, scale = 10, autoscale = T)
-f1 = Surv(time_mon, Death) ~ tve(high_decay) + low_decay
- 
-fit <- stan_surv(
-  f1,
-  data = sub_data,
-  basehaz = "exp",
-  prior = prior1,
-  chains = 4,
-  iter = 2000)
+library(brms)
 
+prior1 = prior(normal(0, 20), class = "b")   # prior for the coefficients
+prior2 = prior(normal(0, 20), class = "Intercept")
 
-
+fit_brm = brm(time_mon | cens(1-Death) ~ group, 
+           data = t_df22, 
+           family = "cox",
+           prior = c(prior1, prior2),
+           seed = 123,
+           chains = 3,
+           iter = 3000
+)
 ```
 
 ```{r}
 
 summary(fit)
-exp(fit$coefficients)
-
-plot(fit, "trace")
 
 
 ```
@@ -425,9 +433,30 @@ plot(fit, "trace")
 
 
 ```{r}
-# Assuming your original dataframe is named 'your_data' and you want to select columns 'column1', 'column3', 'column6', and 'column8'
-sub_data <- t_df22[, c("time_mon", "Death", "name", "low_decay", "high_decay")]
+plot(fit_brm)
+
+```
+
+```{r}
+
+loo_compare(loo(fit_brm), loo(mod1_exp))
+
+```
+```{r}
+# Check the posterior predictive checks
+
+# Check the residuals
+residuals(prior_fit)
+
+
+
+# If you have another model, you can compare them using loo
+# brm_fit2 <- brm(....)
+# loo_compare(brm_fit, brm_fit2)
 
 
 
 ```
+
+
+

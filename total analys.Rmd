@@ -546,8 +546,23 @@ t_df22$growth <- ifelse(t_df22$group %in% c("low growth", "high growth"), 1, 0)
 
 
 ```{R}
-model = coxph(Surv(time_mon, Death) ~  low_decay + high_decay +
-                low_growth + high_growth + stable + yoyo, data = t_df22, control = coxph.control(iter.max = 22))
+hr_58 = t_df22[!(t_df22$selectedFit %in% c("not fit")), ]
+```
+
+```{r}
+#tdf33 = t_df22
+hr_58$group <- as.factor(hr_58$group)
+
+hr_58$group <- relevel(hr_58$group, ref = "high growth")
+```
+
+
+```{r}
+model = coxph(Surv(time_mon, Death) ~ group, data = hr_58, iter.max = 50)
+
+#model1 = coxph(Surv(time_mon, Death) ~ low_decay + stable + low_growth + 
+ #                high_growth + yoyo, data = hr_58, control = coxph.control(iter.max = 50))
+
 
 #t_df22$group_var = relevel(as.factor(t_df22$group), ref = "stable")
 
@@ -556,6 +571,10 @@ model = coxph(Surv(time_mon, Death) ~  low_decay + high_decay +
 
 #model = coxph(Surv(time_mon, Death) ~ group, data = t_df22)
 summary(model)
+
+##Complete separation: Complete separation occurs when a predictor perfectly separates the two outcomes, meaning there's a predictor that perfectly predicts the event. When this happens, the maximum likelihood estimate does not exist, and NA values are returned.
+
+#Insufficient data: If there are very few events (such as deaths in your case) in some of the categories of your predictor, the model might not have enough information to estimate the hazard ratio.
 
 ```
 
@@ -566,12 +585,12 @@ summary(model)
 ## shrink the coefficients towards zero, help improve the stability of the estimates in our cases with small sample sizes.
 
 library(glmnet)
-X = t_df22[, c("low_decay", "high_decay", "low_growth",
-              "high_growth", "yoyo", "stable")]
+X = hr_58[, c("low_decay", "low_growth",
+              "high_decay", "yoyo", "stable")]
 
 X = as.matrix(X)  # Convert the data frame to a matrix
 
-Y = Surv(t_df22$time_mon, t_df22$Death)
+Y = Surv(hr_58$time_mon, hr_58$Death)
 
 set.seed(123)  # For reproducibility
 cv_fit = cv.glmnet(x = X, y = Y, family = "cox", alpha = 0)
@@ -798,14 +817,14 @@ last_obs <- long_data1 %>%
   group_by(name) %>%
   filter(date == max(date))
 
-ggplot(long_data1, aes(x = date, y = predicted_tumor_size, group = name, color = selectedFit)) +
+ggplot(long_data1, aes(x = date, y = QLFCAD, group = name, color = selectedFit)) +
   geom_line() +
   geom_point() +
   scale_color_manual(values = custom_palette) +
   theme_minimal() +
-  labs(title = "Predicted Tumor Sizes (log scale)",
+  labs(#title = "QLF Score (log scale)",
        x = "Visit Date",
-       y = "Tumor Size (log scale)",
+       y = "QLF Score (per visit)",
        color = "selectedFit") +
   geom_text(data = last_obs, aes(label = name), hjust = -0.1, vjust = 0.5, size = 3, check_overlap = TRUE)+
   theme_grey(base_size = 25) +
@@ -814,6 +833,8 @@ ggplot(long_data1, aes(x = date, y = predicted_tumor_size, group = name, color =
         legend.position = "right")
 
 ```
+
+
 ```{r}
 # load libraries
 library(nlme)
@@ -916,9 +937,9 @@ predicted_data <- ggpredict(lme_model, terms = c("log_date [all]", "treatment"))
 # Visualize the results
 plot(predicted_data, colors = custom_palette) +
   theme_minimal() +
-  labs(title = "Predicted Tumor Sizes",
+  labs(#title = "Predicted Tumor Sizes",
        x = "Visit Date",
-       y = "Tumor Size",
+       y = "QLF Score (log scale)",
        color = "Treatment")
 
 ```
@@ -967,16 +988,16 @@ last_obs <- long_data1 %>%
   group_by(name) %>%
   filter(date == max(date))
 
-ggplot(long_data1, aes(x = date, y = predicted_tumor_size, group = name, color = treatment)) +
+ggplot(long_data1, aes(x = date, y = QLFCAD, group = name, color = treatment)) +
   guides(color = guide_legend(ncol = 1)) +
   theme(legend.direction = "vertical", legend.box = "vertical") +
   geom_line() +
   geom_point() +
   #scale_color_manual(values = custom_palette) +
   theme_minimal() +
-  labs(title = "Predicted Tumor Sizes (log Scale)",
+  labs(#title = "Predicted Tumor Sizes (log Scale)",
        x = "Visit Date",
-       y = "Tumor Size (Log Scale)",
+       y = "QLF Score (per visit)",
        color = "Treatment") +
   geom_text(data = last_obs, aes(label = name), hjust = -0.1, vjust = 0.5, size = 3, check_overlap = TRUE)+
   theme_grey(base_size = 16.5) +
