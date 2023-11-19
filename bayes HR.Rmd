@@ -66,13 +66,11 @@ prior_fit = stan_surv(Surv(time_mon, Death) ~ low_decay + high_decay + low_growt
 summary(prior_fit)
 prior_summary(prior_fit)
 
-# Assuming `fit` is the object returned by the stan_surv() function
-posterior_samples <- as.matrix(prior_fit)  # Extracts a matrix of posterior samples
+posterior_samples = as.matrix(prior_fit)
 
 # Compute 95% credible intervals
 apply(posterior_samples, 2, quantile, probs = c(0.025, 0.975))
 
-# This returns a matrix with rownames '2.5%' and '97.5%' and column names for each parameter
 
 ```
 
@@ -80,12 +78,12 @@ apply(posterior_samples, 2, quantile, probs = c(0.025, 0.975))
 ########################################################################################
 
 ```{r}
-#mod1_exp <- update(prior_fit, basehaz = "exp")
-mod1_weibull <- update(prior_fit, basehaz = "weibull")
-mod1_gompertz <- update(prior_fit, basehaz = "gompertz")
-mod1_bspline <- update(prior_fit, basehaz = "bs")
-mod1_mspline1 <- update(prior_fit, basehaz = "ms")
-mod1_mspline2 <- update(prior_fit, basehaz = "ms", basehaz_ops = list(df = 9))
+#mod1_exp = update(prior_fit, basehaz = "exp")
+mod1_weibull = update(prior_fit, basehaz = "weibull")
+mod1_gompertz = update(prior_fit, basehaz = "gompertz")
+mod1_bspline = update(prior_fit, basehaz = "bs")
+mod1_mspline1 = update(prior_fit, basehaz = "ms")
+mod1_mspline2 = update(prior_fit, basehaz = "ms", basehaz_ops = list(df = 9))
 mod1_AFT = update(prior_fit,  basehaz = "weibull-aft")
 
 ```
@@ -113,7 +111,7 @@ nd = data.frame(group = c("low decay",
                           "remainder"))
 head(nd)
 
-ps <- posterior_survfit(mod1_AFT,
+ps = posterior_survfit(mod1_AFT,
                         newdata = nd,
                         times = 0,
                         extrapolate = TRUE,
@@ -124,7 +122,7 @@ head(ps)
 ```{r}
 
 
-panel_labels <- c('1' = "low decay",
+panel_labels = c('1' = "low decay",
                   '2' = "high decay",
                   '3' = "low growth",
                   '4' = "high growth",
@@ -132,17 +130,17 @@ panel_labels <- c('1' = "low decay",
                   '6' =  "yoyo",
                   '7' = "remainder")
 
-pps <- plot(ps) + facet_wrap(~ id, labeller = labeller(id = panel_labels))
+pps = plot(ps) + facet_wrap(~ id, labeller = labeller(id = panel_labels))
 ```
 
 
 ```{r}
-ph <- posterior_survfit(mod1_AFT, newdata = nd, type = "haz")
-pl <- posterior_survfit(mod1_AFT, newdata = nd, type = "loghaz")
+ph = posterior_survfit(mod1_AFT, newdata = nd, type = "haz")
+pl = posterior_survfit(mod1_AFT, newdata = nd, type = "loghaz")
 
-pph <- plot(ph) +
+pph = plot(ph) +
   facet_wrap(~ id, labeller = labeller(id = panel_labels))
-ppl <- plot(pl) +
+ppl = plot(pl) +
   facet_wrap(~ id, labeller = labeller(id = panel_labels))
 
 ```
@@ -442,16 +440,12 @@ plot(fit_brm)
 loo_compare(loo(fit_brm), loo(mod1_exp))
 
 ```
-```{r}
-# Check the posterior predictive checks
 
-# Check the residuals
+```{r}
 residuals(prior_fit)
 
 
-
-# If you have another model, you can compare them using loo
-# brm_fit2 <- brm(....)
+# brm_fit2 = brm(....)
 # loo_compare(brm_fit, brm_fit2)
 
 

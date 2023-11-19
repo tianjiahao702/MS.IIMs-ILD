@@ -12,8 +12,7 @@ library(dplyr)
 library(readr)
 library(tumgr)
 library(minpack.lm)
-library(lme4) # for fitting mixed effects models
-library(lmerTest) # for calculating p-values
+library(lmerTest)
 ```
 
 ```{R}
@@ -22,11 +21,10 @@ library(lmerTest) # for calculating p-values
 Treat = read.table(
   "~/Desktop/MS report/data/Data-selected 2/IIMQILD_221104_Box.csv", 
   sep = ",", header = TRUE)
-## change column name for merge
+
 colnames(Treat)[which(names(Treat) == "Patient_ID")] = "SUBJID"
 
-# Create a new column called "treatment" that contains the treatment each ID took
-Treat <- Treat %>%
+Treat = Treat %>%
   mutate(treatmentV1V2 = case_when(
     HiPD_V1V2 == 1 ~ "HiPD_V1V2",
     CsA_V1V2 == 1 ~ "CsA_V1V2",
@@ -38,13 +36,12 @@ Treat <- Treat %>%
     IVIg_V1V2 == 1 ~ "IVIg_V1V2",
     RTX_V1V2 == 1 ~ "RTX_V1V2",
     ISswitch_V1V2 == 1 ~ "ISswitch_V1V2",
-    TRUE ~ "No Treatment" # Default value if none of the treatments are taken
+    TRUE ~ "No Treatment"
   ))
 ```
 
 
 ```{r}
-## read data
 
 DF1 = read.table(
   "~/Desktop/MS report/data/Data-selected/10083_IMQUAL_01Oct2021.csv", 
@@ -173,25 +170,18 @@ qlf22 = qlf %>%
 
 
 ```{r}
-# Load required packages
 library(lme4)
 
-# Load and prepare your data
-# Assume your dataset is stored in a data frame called "df"
-# Make sure the necessary variables are appropriately coded as factors or numerics
-# For example, assuming the "treatment" variable is categorical with 10 classes:
-# Convert tumor_region to a factor variable
-qlf22$REGION <- as.factor(qlf22$REGION)
+qlf22$REGION = as.factor(qlf22$REGION)
 
-# Create dummy variables for tumor_region
-dummy_vars <- model.matrix(~ REGION - 1, data = qlf22)
+dummy_vars = model.matrix(~ REGION - 1, data = qlf22)
 
 # Combine dummy variables with the original dataset
-qlf22 <- cbind(qlf22, dummy_vars)
+qlf22 = cbind(qlf22, dummy_vars)
 ```
 
 ```{R}
-qlf22$treatmentV1V2 <- as.factor(qlf22$treatmentV1V2)
+qlf22$treatmentV1V2 = as.factor(qlf22$treatmentV1V2)
 ```
 
 ```{r}
@@ -218,7 +208,6 @@ qlf22$logdate = log(qlf22$date)
 ```{R}
 #qlf$[is.na(df$x)] <- 0
 
-# Fit a mixed-effects linear regression model
 model = lmer(logqild ~ HiPD_V1V2 +
                  CsA_V1V2 +    
                  CTX_V1V2 +      
@@ -230,13 +219,7 @@ model = lmer(logqild ~ HiPD_V1V2 +
                  RTX_V1V2 +   
                  ISswitch_V1V2 + REGION + (1 | name), data = qlf22)
 
-# Get summary of the model
 summary(model)
-
-# Get confidence intervals of fixed effects
-#confint(model)
-
-
 
 ```
 
@@ -254,7 +237,7 @@ KRmodcomp(model, model2)
 
 ```{r}
 library(broom.mixed) 
-(diagd <- augment(model))
+(diagd = augment(model))
 
 
 ```
@@ -263,7 +246,7 @@ library(broom.mixed)
 
 ```{r}
 library(broom.mixed) 
-(diagd <- augment(model))
+(diagd = augment(model))
 
 
 ```
@@ -286,6 +269,7 @@ diagd %>%
   labs(x = "Fitted", ylab = "Residuals")
 
 ```
+
 ```{r}
 model = lmer(logqlf ~ logdate + treatmentV1V2 + REGION + (1 + logdate | name), data = qlf22)
 summary(model)

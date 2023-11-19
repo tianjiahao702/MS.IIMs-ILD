@@ -38,31 +38,31 @@ hist(t_df$log_d, main = "Tumor Growth Rate Distribution", xlab = "Tumor Growth R
 
 
 ```{r}
-g_df = t_df[!is.na(t_df$log_g), ]
-g_df <- g_df %>%
+g_df = t_df[!is.na(t_df$g) & !is.na(t_df$Death),]
+g_df = g_df %>%
   filter(!(selectedFit %in% c("gd", "gdphi")))
 
 
 # Calculate the tertiles of the log growth rate
-log_growth_tertiles = quantile(g_df$log_g, probs = c(1/2))
+log_growth_tertiles = quantile(g_df$g, probs = c(1/2))
 
 # Create a new column with the tertile groups
-g_df$log_growth_tertile = cut(g_df$log_g,
+g_df$log_growth_tertile = cut(g_df$g,
                                   breaks = c(-Inf, log_growth_tertiles, Inf),
                                   labels = c(1, 2),
                                   include.lowest = TRUE)
 
 
-d_df = t_df[!is.na(t_df$log_d) & !is.na(t_df$Death), ]
-d_df <- d_df %>%
+d_df = t_df[!is.na(t_df$d) & !is.na(t_df$Death), ]
+d_df = d_df %>%
   filter(!(selectedFit %in% c("gd", "gdphi")))
 
 
 # Calculate the tertiles of the log growth rate
-log_decay_tertiles = quantile(d_df$log_d, probs = c(1/2))
+log_decay_tertiles = quantile(d_df$d, probs = c(1/2))
 
 # Create a new column with the tertile groups
-d_df$log_decay_tertile = cut(d_df$log_d,
+d_df$log_decay_tertile = cut(d_df$d,
                                   breaks = c(-Inf, log_decay_tertiles, Inf),
                                   labels = c(1, 2),
                                   include.lowest = TRUE)
@@ -94,8 +94,6 @@ t_df11$group = ifelse(t_df11$group == 5, "yoyo", t_df11$group)
 ```
 
 ```{r}
-# Assuming your data is stored in a dataframe called 'your_data' and the first column is 'first_column' and the second column is 'second_column'
-
 stable = t_df11 %>%
   filter(!(selectedFit %in% c("gd", "gdphi", "gx", "dx","not fit")))
 
@@ -116,7 +114,7 @@ t_df11 = t_df11 %>%
 ```
 
 ```{r}
-t_df11$group = ifelse(is.na(t_df11$group), "remainder", t_df11$group)
+t_df11$group = ifelse(is.na(t_df11$group), "Not Fit", t_df11$group)
 
 ```
 
@@ -134,37 +132,219 @@ t_df11 = t_df11 %>%
 
 
 ```{r}
-#sur_df = t_df11[!is.na(t_df11$Death), ]
+tdf111 = t_df11[!is.na(t_df11$Death), ]
 
-sur_df = t_df11[!(t_df11$group == "remainder"), ]
+#sur_df = t_df11[!(t_df11$group == "remainder"), ]
 
 ```
 
 
+```{r}
+new_t = read.csv(
+  "~/Desktop/MSRpt/data/new treatment comb/IIMQILD_221104_TxGadd.csv", header = TRUE, sep = ",")
 
+new_t = new_t %>% 
+  dplyr:: select(Patient_ID,
+                 AE_ILD,
+                 AE_Date,
+                 AE_Du,
+                 LastFUdate_TPLfree,
+                 Death,
+                 DeathDate,
+                 V1_CTdate,
+                 V2_CTdate,
+                 V3_CTdate,
+                 GCIS,
+                 GCIS_3G,
+                 ISintG4,
+                 ISintG3,
+                 DIAG)
+
+colnames(new_t)[which(names(new_t) == "Patient_ID")] = "SUBJID"
+```
+
+
+```{R}
+new_t$last_CTdate = ifelse(is.na(new_t$V3_CTdate) | new_t$V3_CTdate == "", new_t$V2_CTdate, new_t$V3_CTdate)
+```
+
+```{r}
+new_t$DEATHorAE = ifelse(is.na(new_t$Death) | new_t$Death == 0, new_t$AE_ILD, new_t$Death)
+
+
+```
+
+```{r}
+new_t$lastfud = ifelse(is.na(new_t$DeathDate) | new_t$DeathDate == "", new_t$LastFUdate_TPLfree, new_t$DeathDate)
+new_t$lastfud = as.Date(new_t$lastfud, format = "%d-%b-%y")
+new_t$lastfud = as.numeric(new_t$lastfud)
+```
+
+```{r}
+
+new_t$lastfud_AE = ifelse(new_t$AE_Date != "", new_t$AE_Date,
+                 ifelse(new_t$DeathDate != "", new_t$DeathDate, new_t$LastFUdate_TPLfree))
+new_t$lastfud_AE = as.Date(new_t$lastfud_AE, format = "%d-%b-%y")
+new_t$lastfud_AE = as.numeric(new_t$lastfud_AE)
+
+
+new_t$lastctd = as.Date(new_t$last_CTdate, format = "%d-%b-%y")
+new_t$lastctd = as.numeric(new_t$lastctd)
+```
+
+
+```{r}
+new_t$chang_in_date = new_t$lastfud - new_t$lastctd
+new_t$chang_in_date = new_t$chang_in_date / 30
+
+new_t$chang_in_date_AE = new_t$lastfud_AE - new_t$lastctd
+new_t$chang_in_date_AE = new_t$chang_in_date_AE / 30
+```
+
+
+```{R}
+new_t$ISintG3 = ifelse(new_t$ISintG3 == "0", "ISint3_G1", new_t$ISintG3)
+
+new_t$ISintG3 = ifelse(new_t$ISintG3 == "1", "ISint3_G2", new_t$ISintG3)
+
+new_t$ISintG3 = ifelse(new_t$ISintG3 == "2", "ISint3_G3", new_t$ISintG3)
+```
+
+
+```{r}
+new_t$ISintG4 = ifelse(new_t$ISintG4 == "ISint4_G1", "ISint4_G0", new_t$ISintG4)
+
+new_t$ISintG4 = ifelse(new_t$ISintG4 == "ISint4_G2", "ISint4_G1", new_t$ISintG4)
+
+new_t$ISintG4 = ifelse(new_t$ISintG4 == "ISint4_G3", "ISint4_G2", new_t$ISintG4)
+
+new_t$ISintG4 = ifelse(new_t$ISintG4 == "ISint4_G4", "ISint4_G3", new_t$ISintG4)
+
+```
+
+```{r}
+new_t$treat_G2 = ifelse(new_t$ISintG4 == "ISint4_G0", "G1", new_t$ISintG4)
+new_t$treat_G2 = ifelse(new_t$treat_G2 == "ISint4_G1", "G1", new_t$treat_G2)
+
+new_t$treat_G2 = ifelse(new_t$treat_G2 == "ISint4_G2", "G2", new_t$treat_G2)
+new_t$treat_G2 = ifelse(new_t$treat_G2 == "ISint4_G3", "G2", new_t$treat_G2)
+```
+
+```{R}
+new_t$firstcts = as.Date(new_t$V1_CTdate, format = "%d-%b-%y")
+new_t$firstcts = as.numeric(new_t$firstcts)
+new_t$total_fu_date = new_t$lastfud - new_t$firstcts
+
+
+qlfffffff = merge(qlfffffff, select(new_t, SUBJID, total_fu_date), by = "SUBJID")
+
+qlfffffff$total_fu_date = qlfffffff$total_fu_date / 30
+
+
+```
+
+```{R}
+qlfffffff = merge(qlfffffff, select(new_t, SUBJID, chang_in_date_AE), by = "SUBJID")
+
+
+```
+
+```{r}
+qlfffffff = merge(tdf111, new_t, by = "SUBJID")
+#qildddddd = merge(data1_qild, new_t, by = "SUBJID")
+
+
+```
+
+```{R}
+qlfffffff$qlf_change = ifelse(qlfffffff$change < 0, "-", ifelse(qlfffffff$change > 0, "+", "0"))
+
+
+```
+
+
+```{R}
+qlfffffff$group = ifelse(qlfffffff$group == "yoyo", "convex", qlfffffff$group)
+qlfffffff$group = ifelse(qlfffffff$group == "Not Fit", "concave", qlfffffff$group)
+```
+
+```{r}
+qildddddd = merge(qildddddd, select(new_t, SUBJID, chang_in_date_AE), by = "SUBJID")
+
+qildddddd$group = ifelse(qildddddd$group == "yoyo", "convex", qildddddd$group)
+```
+
+```{r}
+qildddddd$group = ifelse(qildddddd$group == "remainder", "concave", qildddddd$group)
+
+```
+
+```{r}
+qlfffffff = merge(qlfffffff, select(new_t, SUBJID, treat_G2), by = "SUBJID")
+
+```
+
+```{R}
+qlfffffff = qlfffffff %>%
+  mutate(group = case_when(
+    selectedFit == "gx" ~ "growth",
+    selectedFit == "dx" ~ "decay",
+    selectedFit == "gd" ~ "convex",
+    selectedFit == "gdphi" ~ "convex",
+    selectedFit == "not fit" ~ "concave",
+    selectedFit == "2 evals not 20% diff" ~ "stable",
+    TRUE ~ selectedFit
+  ))
+```
+
+```{r}
+buzhongyao = qlfffffff
+
+buzhongyao = buzhongyao %>%
+  mutate(Patterns = case_when(
+    new_group == "lgldys+high decay" ~ "the rest",
+    TRUE ~ new_group
+  ))
+
+
+```
 
 ##### Part 1.
 
 
 - Kaplan-Meier curve for visualizing survival, death as event. Three curves, which are separated as three part by tertiles for both g and d.
 
+```{r}
+sur_qlf = qlfffffff[qlfffffff$V3_CTdate.x != "", ]
+sur_qild = qildddddd[qildddddd$V3_CTdate.x != "", ]
+
+
+```
 
 ```{r}
 library(ggfortify)
-surv_obj = Surv(sur_df$time_mon, sur_df$Death)
+
+#mypalette = c("high growth" = "firebrick3", "low growth" = "indianred1",
+              #"high decay" = "forestgreen", "low decay" = "springgreen3",
+              #"stable" = "goldenrod1", 
+              #"convex" = "slateblue", "concave" = "grey46")
+#qlfffffff$group = as.factor(qlfffffff$group)
+
+#levels(qlfffffff$group) = c("high growth", "low growth", "high decay", "low decay", "stable", "convex", "concave")
+
+surv_obj = Surv(buzhongyao$chang_in_date, buzhongyao$Death.y)
 
 # Fit the Kaplan-Meier model for the subset
-km_fit = survfit(surv_obj ~ sur_df$group)
+km_fit = survfit(surv_obj ~ buzhongyao$Patterns)
 
 # Plot the Kaplan-Meier curve for the subset
-sur_km = ggsurvplot(km_fit, data = sur_df, 
+sur_km = ggsurvplot(km_fit, data = buzhongyao, 
                     risk.table = TRUE, 
                     pval = TRUE,
-                    xlab = "Time (in month)")
+                    xlab = "Time (in month)",
+                    palette = c("grey46", "firebrick3", "burlywood3"))# "goldenrod1") ) 
 
 sur_km
-
-
 ```
 
 
@@ -287,8 +467,10 @@ t_df = mutate(t_df, combined_g = case_when(
 ```{R}
 ## bad
 # Fit the Cox proportional hazards model
-model = coxph(Surv(time_mon, Death) ~ combined_g, data = t_df)
-exp(model$coef)
+model = coxph(Surv(chang_in_date, Death.x) ~ grouplow.decay + grouphigh.decay +
+                        grouphigh.growth + grouplow.growth + groupNot.Fit +
+                        groupyoyo, data = qlfffffff, iter.max = 1000)
+summary(model)
 
 ```
 
@@ -437,7 +619,7 @@ exp(model$coef)
 
 ## bad
 # Add a new column for growth and decay groups
-tt_df <- t_df %>%
+tt_df = t_df %>%
   mutate(
     growth_group = case_when(
       growth_tertile1 == 1 ~ "growth_tertile1",
@@ -454,13 +636,13 @@ tt_df <- t_df %>%
   ) 
 
 # Identify patients who belong to both growth and decay groups
-tt_df <- tt_df %>%
+tt_df = tt_df %>%
   mutate(
     both_growth_decay = ifelse(growth_group != "none" & decay_group != "none", 1, 0)
   )
 
 # Create a new combined group variable
-tt_df <- tt_df %>%
+tt_df = tt_df %>%
   mutate(
     combined_group = case_when(
       both_growth_decay == 1 ~ "both_growth_decay",
@@ -471,7 +653,7 @@ tt_df <- tt_df %>%
     )
   )
 # Fit the Cox proportional hazards model with the combined group variable
-model <- coxph(Surv(time_mon, Death) ~ combined_group, data = tt_df)
+model = coxph(Surv(time_mon, Death) ~ combined_group, data = tt_df)
 
 # Print the summary of the model
 summary(model)
@@ -504,8 +686,8 @@ coef(cv_fit, s = optimal_lambda)
 ```
 
 ```{R}
-coefficients <- c(-1.3961258, -0.8303949, 2.7472011, 0, -0.7827922, 0, 0.3815424)
-hazard_ratios <- exp(coefficients)
+coefficients = c(-1.3961258, -0.8303949, 2.7472011, 0, -0.7827922, 0, 0.3815424)
+hazard_ratios = exp(coefficients)
 hazard_ratios
 
 
@@ -538,8 +720,8 @@ t_df22 = t_df22 %>%
 ```{r}
 
 # Create a new binary column based on the existing column
-t_df22$decay <- ifelse(t_df22$group %in% c("low decay", "high decay"), 1, 0)
-t_df22$growth <- ifelse(t_df22$group %in% c("low growth", "high growth"), 1, 0)
+t_df22$decay = ifelse(t_df22$group %in% c("low decay", "high decay"), 1, 0)
+t_df22$growth = ifelse(t_df22$group %in% c("low growth", "high growth"), 1, 0)
 
 
 ```
@@ -551,17 +733,18 @@ hr_58 = t_df22[!(t_df22$selectedFit %in% c("not fit")), ]
 
 ```{r}
 #tdf33 = t_df22
-hr_58$group <- as.factor(hr_58$group)
+hr_58$group = as.factor(hr_58$group)
 
-hr_58$group <- relevel(hr_58$group, ref = "high growth")
+hr_58$group = relevel(hr_58$group, ref = "high growth")
 ```
 
 
 ```{r}
-model = coxph(Surv(time_mon, Death) ~ group, data = hr_58, iter.max = 50)
+#model = coxph(Surv(time_mon, Death) ~ group, data = hr_58, iter.max = 50)
 
-#model1 = coxph(Surv(time_mon, Death) ~ low_decay + stable + low_growth + 
- #                high_growth + yoyo, data = hr_58, control = coxph.control(iter.max = 50))
+
+model = coxph(Surv(time_mon, Death) ~ low_decay + stable + low_growth + 
+                 high_growth + yoyo, data = hr_58, control = coxph.control(iter.max = 50))
 
 
 #t_df22$group_var = relevel(as.factor(t_df22$group), ref = "stable")
@@ -573,8 +756,6 @@ model = coxph(Surv(time_mon, Death) ~ group, data = hr_58, iter.max = 50)
 summary(model)
 
 ##Complete separation: Complete separation occurs when a predictor perfectly separates the two outcomes, meaning there's a predictor that perfectly predicts the event. When this happens, the maximum likelihood estimate does not exist, and NA values are returned.
-
-#Insufficient data: If there are very few events (such as deaths in your case) in some of the categories of your predictor, the model might not have enough information to estimate the hazard ratio.
 
 ```
 
@@ -593,7 +774,7 @@ X = as.matrix(X)  # Convert the data frame to a matrix
 Y = Surv(hr_58$time_mon, hr_58$Death)
 
 set.seed(123)  # For reproducibility
-cv_fit = cv.glmnet(x = X, y = Y, family = "cox", alpha = 0)
+cv_fit = cv.glmnet(x = X, y = Y, family = "cox", alpha = 1)
 
 plot(cv_fit)
 
@@ -609,7 +790,7 @@ B = 5000
 
 # Initialize a matrix to store the bootstrap results
 bootstrap_results = matrix(NA, nrow = B, ncol = ncol(X))
-colnames(bootstrap_results) <- colnames(X)
+colnames(bootstrap_results) = colnames(X)
 
 # Perform the bootstrap
 set.seed(123)  # For reproducibility
@@ -653,13 +834,14 @@ data.frame(CI_lower, CI_upper)
 
 ```
 
+
 ```{r}
 # Number of bootstrap samples, non-parametric
 B = 2000
 
 # Initialize a matrix to store the bootstrap results
 bootstrap_results = matrix(NA, nrow = B, ncol = ncol(X))
-colnames(bootstrap_results) <- colnames(X)
+colnames(bootstrap_results) = colnames(X)
 
 # Perform the bootstrap
 set.seed(123)  # For reproducibility
@@ -670,7 +852,7 @@ for (b in 1:B) {
   Y_boot = Y[bootstrap_rows]
   
   # Fit the model to the bootstrap sample
-  cv_fit_boot = try(cv.glmnet(x = X_boot, y = Y_boot, family = "cox", alpha = 0), silent = TRUE)
+  cv_fit_boot = try(cv.glmnet(x = X_boot, y = Y_boot, family = "cox", alpha = 1), silent = TRUE)
   
   # If an error occurred during fitting, skip this bootstrap sample
   if (class(cv_fit_boot) == "try-error") {
@@ -717,7 +899,7 @@ B = 2000
 
 # Initialize a matrix to store the bootstrap results
 bootstrap_results = matrix(NA, nrow = B, ncol = length(coef(cv_fit, s = optimal_lambda)))
-colnames(bootstrap_results) <- names(coef(cv_fit, s = optimal_lambda))
+colnames(bootstrap_results) = names(coef(cv_fit, s = optimal_lambda))
 
 # Parametric bootstrap
 set.seed(123)  # For reproducibility
@@ -776,48 +958,48 @@ CI_upper_HR
 - longituinal plot
 
 ```{r}
-treat = read.csv("treat_combine.csv", sep = ",", header = TRUE)
+#treat = read.csv("treat_combine.csv", sep = ",", header = TRUE)
 
-long_data = merge(qlf, t_df, by = 'name', all = TRUE)
+long_data = merge(qlf1, new_t, by = 'SUBJID', all = TRUE)
 
 long_data$date = as.Date(long_data$VISITDTN, format = "%d%b%Y")
 
-long_data$n_date <- as.numeric(long_data$date)
+long_data$n_date = as.numeric(long_data$date)
 
-long_data$log_date = log(long_data$n_date)
-long_data$log_qlf = log(long_data$size)
+#long_data$log_date = log(long_data$n_date)
+#long_data$log_qlf = log(long_data$size)
 
-long_data = long_data[!is.na(long_data$Age), ]
+#long_data = long_data[!is.na(long_data$Age), ]
 
 ```
 
 ################## by gd rate
 
 ```{r}
-long_data1 = long_data[!(long_data$selectedFit %in% c("not fit")), ]
-long_data1 = long_data1[!is.na(long_data1$Death), ]
+#long_data1 = long_data[!(long_data$selectedFit %in% c("not fit")), ]
+long_data = long_data[!is.na(long_data$Death.x), ]
 
-long_data1$selectedFit = ifelse(long_data1$selectedFit == "2 evals not 20% diff", "stable", long_data1$selectedFit)
+long_data$selectedFit = ifelse(long_data$selectedFit == "2 evals not 20% diff", "stable", long_data$selectedFit)
 ```
 
 ```{R}
 lme_model = lmer(log_qlf ~ log_date + selectedFit  + (1 | name), data = long_data1)
 
 # First, add the model predictions to the new_data dataframe
-#long_data$predicted_tumor_size <- predict(lme_model, long_data)
-long_data1$predicted_tumor_size <- predict(lme_model, re.form = NULL)
+#long_data$predicted_tumor_size = predict(lme_model, long_data)
+long_data1$predicted_tumor_size = predict(lme_model, re.form = NULL)
 
 library(ggplot2)
 
-custom_palette <- c("gx" = "firebrick3", "dx" = "forestgreen", "stable" = "goldenrod1", "gd" = "steelblue1", "gdphi" = "purple1")  # specify your color palette
+custom_palette = c("gx" = "firebrick3", "dx" = "forestgreen", "stable" = "goldenrod1", "gd" = "steelblue1", "gdphi" = "purple1", "not fit" = "grey46")
 
 
 # Find the last observation for each subject
-last_obs <- long_data1 %>%
+last_obs = long_data %>%
   group_by(name) %>%
   filter(date == max(date))
 
-ggplot(long_data1, aes(x = date, y = QLFCAD, group = name, color = selectedFit)) +
+ggplot(long_data, aes(x = date, y = QLFCAD, group = name, color = selectedFit)) +
   geom_line() +
   geom_point() +
   scale_color_manual(values = custom_palette) +
@@ -836,15 +1018,14 @@ ggplot(long_data1, aes(x = date, y = QLFCAD, group = name, color = selectedFit))
 
 
 ```{r}
-# load libraries
 library(nlme)
 library(ggplot2)
 
-lme_model <- lme(log_qlf ~ log_date + Age + Sex + selectedFit, random = ~1 | name, data = long_data1)
+lme_model = lme(log_qlf ~ log_date + Age + Sex + selectedFit, random = ~1 | name, data = long_data1)
 
-long_data1$predicted_tumor_size <- predict(lme_model, level = 0)
+long_data1$predicted_tumor_size = predict(lme_model, level = 0)
 
-custom_palette <- c("#00AFBB", "#E7B800", "#FC4E07", "black", "red")  # specify your color palette
+custom_palette = c("#00AFBB", "#E7B800", "#FC4E07", "black", "red") 
 
 ggplot(long_data1, aes(x = date, y = predicted_tumor_size, group = name, color = selectedFit)) +
   geom_line() +
@@ -870,38 +1051,38 @@ ggplot(long_data1, aes(x = date, y = predicted_tumor_size, group = name, color =
 ############### by treatment 
 
 ```{R}
-long_data1$treat_comb_V1V2 <- gsub(
+long_data1$treat_comb_V1V2 = gsub(
   "HiPD_V1V2\\+CsA_V1V2\\+AZT_V1V2\\+MMF_V1V2\\+IVIg_V1V2\\+RTX_V1V2\\+ISswitch_V1V2",
   "HiPD_V1V2+CsA_V1V2+AZT_V1V2+others",
   long_data1$treat_comb_V1V2)
 
-long_data1$treat_comb_V1V2 <- gsub("CsA_V1V2\\+MTX_V1V2\\+ISswitch_V1V2", 
+long_data1$treat_comb_V1V2 = gsub("CsA_V1V2\\+MTX_V1V2\\+ISswitch_V1V2", 
                                  "CsA_V1V2+MTX_V1V2+others",
                                  long_data1$treat_comb_V1V2)
 
 
 
-long_data1$treat_comb_V1V2 <- gsub("CsA_V1V2\\+Tac_V1V2\\+MTX_V1V2\\+IVIg_V1V2\\+ISswitch_V1V2", 
+long_data1$treat_comb_V1V2 = gsub("CsA_V1V2\\+Tac_V1V2\\+MTX_V1V2\\+IVIg_V1V2\\+ISswitch_V1V2", 
                                  "CsA_V1V2+MTX_V1V2+others",
                                  long_data1$treat_comb_V1V2)
 
-long_data1$treat_comb_V1V2 <- gsub("HiPD_V1V2\\+CsA_V1V2\\+ISswitch_V1V2", 
+long_data1$treat_comb_V1V2 = gsub("HiPD_V1V2\\+CsA_V1V2\\+ISswitch_V1V2", 
                                  "HiPD_V1V2+CsA_V1V2+others",
                                  long_data1$treat_comb_V1V2)
 
-long_data1$treat_comb_V1V2 <- gsub("HiPD_V1V2\\+CsA_V1V2\\+MTX_V1V2", 
+long_data1$treat_comb_V1V2 = gsub("HiPD_V1V2\\+CsA_V1V2\\+MTX_V1V2", 
                                  "HiPD_V1V2+CsA_V1V2+others",
                                  long_data1$treat_comb_V1V2)
 
-long_data1$treat_comb_V1V2 <- gsub("HiPD_V1V2\\+CsA_V1V2\\+CTX_V1V2\\+AZT_V1V2\\+ISswitch_V1V2", 
+long_data1$treat_comb_V1V2 = gsub("HiPD_V1V2\\+CsA_V1V2\\+CTX_V1V2\\+AZT_V1V2\\+ISswitch_V1V2", 
                                  "HiPD_V1V2+CsA_V1V2+AZT_V1V2+others",
                                  long_data1$treat_comb_V1V2)
 
-long_data1$treat_comb_V1V2 <- gsub("HiPD_V1V2\\+CsA_V1V2\\+AZT_V1V2\\+MTX_V1V2\\+ISswitch_V1V2", 
+long_data1$treat_comb_V1V2 = gsub("HiPD_V1V2\\+CsA_V1V2\\+AZT_V1V2\\+MTX_V1V2\\+ISswitch_V1V2", 
                                  "HiPD_V1V2+CsA_V1V2+AZT_V1V2+others",
                                  long_data1$treat_comb_V1V2)
 
-long_data1$treat_comb_V1V2 <- gsub("HiPD_V1V2\\+CTX_V1V2\\+AZT_V1V2\\+IVIg_V1V2\\+ISswitch_V1V2", 
+long_data1$treat_comb_V1V2 = gsub("HiPD_V1V2\\+CTX_V1V2\\+AZT_V1V2\\+IVIg_V1V2\\+ISswitch_V1V2", 
                                  "HiPD_V1V2+CTX_V1V2++others",
                                  long_data1$treat_comb_V1V2)
 
@@ -909,32 +1090,26 @@ long_data1$treat_comb_V1V2 <- gsub("HiPD_V1V2\\+CTX_V1V2\\+AZT_V1V2\\+IVIg_V1V2\
 
 
 ```{r}
-long_data1$treatment <- as.factor(long_data1$treat_comb_V1V2)
+long_data1$treatment = as.factor(long_data1$treat_comb_V1V2)
 long_data1 = long_data1[!is.na(long_data1$treatment), ]
 ```
 
 ```{r}
 
 
-lme_model <- lmer(log_qlf ~ log_date + treatment  + (1 | name), data = long_data1)
+lme_model = lmer(log_qlf ~ log_date + treatment  + (1 | name), data = long_data1)
 
 ```
 
 ```{R}
-
-# Load the ggeffects package
 library(ggeffects)
 library(RColorBrewer)
 
-# Create a custom color palette with 30 colors
-custom_palette <- colorRampPalette(brewer.pal(9, "Set1"))(30)
+custom_palette = colorRampPalette(brewer.pal(9, "Set1"))(30)
 
 
+predicted_data = ggpredict(lme_model, terms = c("log_date [all]", "treatment"))
 
-# Generate predicted values
-predicted_data <- ggpredict(lme_model, terms = c("log_date [all]", "treatment"))
-
-# Visualize the results
 plot(predicted_data, colors = custom_palette) +
   theme_minimal() +
   labs(#title = "Predicted Tumor Sizes",
@@ -945,19 +1120,12 @@ plot(predicted_data, colors = custom_palette) +
 ```
 
 ```{r}
-library(ggplot2)
-
-# Add the model predictions to the long_data dataframe
-# Extract fixed effect predictions
 fixed_effects_pred = predict(lme_model, level = 0)
 
-# Calculate random effect predictions
 random_effects_pred = as.numeric(ranef(lme_model, postVar = FALSE)[[1]][, 1])
 
-# Add fixed and random effect predictions
 overall_pred = fixed_effects_pred + rep(random_effects_pred, each = nrow(long_data) / length(random_effects_pred))
 
-# Add the overall predictions to the long_data dataframe
 long_data$predicted_tumor_size1 = overall_pred
 ```
 
@@ -974,8 +1142,8 @@ ggplot(long_data, aes(x = date, y = log_qlf)) +
 
 ```{r}
 # First, add the model predictions to the new_data dataframe
-#long_data$predicted_tumor_size <- predict(lme_model, long_data)
-long_data1$predicted_tumor_size <- predict(lme_model, re.form = NULL)
+#long_data$predicted_tumor_size = predict(lme_model, long_data)
+long_data1$predicted_tumor_size = predict(lme_model, re.form = NULL)
 
 ```
 
@@ -983,13 +1151,18 @@ long_data1$predicted_tumor_size <- predict(lme_model, re.form = NULL)
 ```{R}
 library(ggplot2)
 
-# Find the last observation for each subject
-last_obs <- long_data1 %>%
+last_obs = long_data %>%
   group_by(name) %>%
   filter(date == max(date))
 
-ggplot(long_data1, aes(x = date, y = QLFCAD, group = name, color = treatment)) +
+#custom_palette = c("firebrick2", "springgreen4", "skyblue2", "gold", "pink1", "snow4")
+
+custom_palette = c("firebrick2", "springgreen4")#, "skyblue2", "gold")
+
+
+ggplot(long_data, aes(x = date, y = QLFCAD, group = name, color = treat_G2)) +
   guides(color = guide_legend(ncol = 1)) +
+  scale_color_manual(values = custom_palette) +
   theme(legend.direction = "vertical", legend.box = "vertical") +
   geom_line() +
   geom_point() +
@@ -1000,9 +1173,9 @@ ggplot(long_data1, aes(x = date, y = QLFCAD, group = name, color = treatment)) +
        y = "QLF Score (per visit)",
        color = "Treatment") +
   geom_text(data = last_obs, aes(label = name), hjust = -0.1, vjust = 0.5, size = 3, check_overlap = TRUE)+
-  theme_grey(base_size = 16.5) +
+  theme_grey(base_size = 20) +
   #theme(axis.text.x = element_text(angle = 45, hjust = 1))+
-  theme(axis.text = element_text(size = 9),  # Increase size of side labels
+  theme(axis.text = element_text(size = 13),  # Increase size of side labels
         legend.position = "right")
 
 
@@ -1011,8 +1184,7 @@ ggplot(long_data1, aes(x = date, y = QLFCAD, group = name, color = treatment)) +
 
 
 ```{r}
-# Create the longitudinal plot with observed data and model predictions
-longitudinal_plot <- ggplot() +
+longitudinal_plot = ggplot() +
   geom_line(data = long_data, aes(x = date, y = log_qlf, group = name, color = treatment), alpha = 0.5) +
   geom_line(data = long_data, aes(x = date, y = predict(lme_model), group = name, color = treatment), linetype = "dashed", size = 1) +
   theme_minimal() +
@@ -1030,22 +1202,23 @@ print(longitudinal_plot)
 
 ```{r}
 
-water_df_overall = t_df[!(t_df$selectedFit %in% c("not fit")), ]
+#water_df_overall = t_df11[!(t_df11$selectedFit %in% c("not fit")), ]
+water_df_overall = qlfffffff
 
-data1 <- water_df_overall %>%
+data1 = water_df_overall %>%
   mutate(group = ifelse(change < 0, "dx", "gx")) %>%
   arrange(group, desc(change))
 
-data1$marker <- NA # Default marker shape
-#data1$marker[data1$name %in% c(66)] <- "gdphi group" # Replace with your specific IDs for cross marker
-data1$marker[data1$name %in% c(28,7,2,69,39,35,76,42,56)] <- "QLF Score: No 20% differed" # Replace with your specific IDs for star marker
-data1$marker[data1$name %in% c(17, 44, 6, 51, 16, 40, 71, 66, 43, 70)] <- "yoyo effect (all convex)" 
+data1$marker = NA # Default marker shape
+#data1$marker[data1$name %in% c(66)] = "gdphi group"
+data1$marker[data1$name %in% c(28,7,2,69,39,35,76,42,56)] = "QLF Score: No 20% differed"
+data1$marker[data1$name %in% c(17, 44, 6, 51, 16, 40, 71, 66, 43, 70)] = "yoyo group (all convex)" 
 
-#yoyo_id <- which(data$name == 66)
+#yoyo_id = which(data$name == 66)
 #no_fit_id = which(data$name == 71)
-#no_20_start <- which(data$ID == 1)
-#no_20_end <- which(data$ID == 9)
-data1 <- data1 %>% 
+#no_20_start = which(data$ID == 1)
+#no_20_end = which(data$ID == 9)
+data1 = data1 %>% 
   mutate(selectedFit = recode(selectedFit, "2 evals not 20% diff" = "stable"))
 
 
@@ -1057,14 +1230,14 @@ waterfall_plot = ggplot(data1, aes(x = reorder(name, change), y = change)) +
     x = "ID",
     y = "Change in Overall QLF Score"
   ) +
-  geom_point(aes(shape = marker, color = marker), size = 4, na.rm = TRUE) +
+  geom_point(aes(shape = marker, color = marker), size = 3, na.rm = TRUE) +
   scale_shape_manual(values = c("QLF Score: No 20% differed" = 8, "yoyo effect (all convex)" = 5)) +
   scale_color_manual(values = c("QLF Score: No 20% differed" = "black", "yoyo effect (all convex)" = "black"))+
-  scale_fill_manual(values = c("gx" = "firebrick3", "dx" = "forestgreen", "stable" = "goldenrod1", "gd" = "steelblue1", "gdphi" = "purple1"))+                  
+  scale_fill_manual(values = c("gx" = "firebrick3", "dx" = "forestgreen", "stable" = "goldenrod1", "gd" = "steelblue1", "gdphi" = "purple1", "not fit" = "grey46"))+                  
   theme_minimal() +
   theme_grey(base_size = 22) +
   #theme(axis.text.x = element_text(angle = 45, hjust = 1))+
-  theme(axis.text = element_text(size = 10),  # Increase size of side labels
+  theme(axis.text = element_text(size = 8.8),  # Increase size of side labels
         legend.position = "right")# Rotate x-axis labels by 45 degrees
 
   #geom_text(data = data.frame(x = c(10, 40), y = c(-15, 15), label = c("dx", "gx")), aes(x, y, label = label), inherit.aes = FALSE, vjust = 0, hjust = 0, size = 10, color = "black")
@@ -1078,47 +1251,97 @@ print(waterfall_plot)
 
 ### waterfall plot by treatment
 
+```{r}
+qlf_df = read.csv("treat_combine.csv", sep = ",", header = TRUE)
+treat = read.csv("~/Desktop/MS report/data/new treatment comb/IIMQILD_221104_TxGadd.csv",
+                 sep = ",", header = TRUE)
+
+colnames(treat)[which(names(treat) == "Patient_ID")] = "SUBJID"
+qlf_df = qlf_df[!is.na(qlf_df$Death), ]
+
+treat = treat %>% 
+  dplyr:: select(GCIS,
+                 GCIS_3G,
+                 ISintG4,
+                 ISintG3,
+                 SUBJID)
+
+
+```
+
+```{r}
+water_df = merge(qlf_df, treat, by = "SUBJID", all.x = TRUE)
+
+
+```
+
 ```{R}
-water_df = t_df11[!(t_df11$selectedFit %in% c("not fit")), ]
-water_df = water_df[!is.na(water_df$Death), ]
+water_df = water_df[!(water_df$selectedFit %in% c("not fit")), ]
+#water_df = water_df[!is.na(water_df$Death), ]
 
 water_df$selectedFit = ifelse(water_df$selectedFit == "2 evals not 20% diff", "stable", water_df$selectedFit)
 
 ```
 
+```{r}
+water_df$combination = paste(water_df$GCIS, water_df$GCIS_3G, water_df$ISintG4, water_df$ISintG3, sep = "+")
+
+```
+
+```{r}
+treat$combination = paste(treat$GCIS, treat$GCIS_3G, treat$ISintG4, treat$ISintG3, sep = "+")
+
+```
+
 ```{R}
-water_df$treat_comb_V1V2 <- gsub(
+water_df$combination = ifelse(water_df$combination == "0+0+0+0", "treat group 1", water_df$combination)
+
+water_df$combination = ifelse(water_df$combination == "1+2+1+0", "treat group 2", water_df$combination)
+
+water_df$combination = ifelse(water_df$combination == "1+2+2+1", "treat group 3", water_df$combination)
+
+water_df$combination = ifelse(water_df$combination == "1+2+3+2", "treat group 4", water_df$combination)
+
+water_df$combination = ifelse(water_df$combination == "0+1+1+0", "treat group 5", water_df$combination)
+
+water_df$combination = ifelse(water_df$combination == "0+1+2+1", "treat group 6", water_df$combination)
+
+```
+
+
+```{R}
+water_df$treat_comb_V1V2 = gsub(
   "HiPD_V1V2\\+CsA_V1V2\\+AZT_V1V2\\+MMF_V1V2\\+IVIg_V1V2\\+RTX_V1V2\\+ISswitch_V1V2",
   "HiPD_V1V2+CsA_V1V2+AZT_V1V2+others",
   water_df$treat_comb_V1V2)
 
-water_df$treat_comb_V1V2 <- gsub("CsA_V1V2\\+MTX_V1V2\\+ISswitch_V1V2", 
+water_df$treat_comb_V1V2 = gsub("CsA_V1V2\\+MTX_V1V2\\+ISswitch_V1V2", 
                                  "CsA_V1V2+MTX_V1V2+others",
                                  water_df$treat_comb_V1V2)
 
 
 
-water_df$treat_comb_V1V2 <- gsub("CsA_V1V2\\+Tac_V1V2\\+MTX_V1V2\\+IVIg_V1V2\\+ISswitch_V1V2", 
+water_df$treat_comb_V1V2 = gsub("CsA_V1V2\\+Tac_V1V2\\+MTX_V1V2\\+IVIg_V1V2\\+ISswitch_V1V2", 
                                  "CsA_V1V2+MTX_V1V2+others",
                                  water_df$treat_comb_V1V2)
 
-water_df$treat_comb_V1V2 <- gsub("HiPD_V1V2\\+CsA_V1V2\\+ISswitch_V1V2", 
+water_df$treat_comb_V1V2 = gsub("HiPD_V1V2\\+CsA_V1V2\\+ISswitch_V1V2", 
                                  "HiPD_V1V2+CsA_V1V2+others",
                                  water_df$treat_comb_V1V2)
 
-water_df$treat_comb_V1V2 <- gsub("HiPD_V1V2\\+CsA_V1V2\\+MTX_V1V2", 
+water_df$treat_comb_V1V2 = gsub("HiPD_V1V2\\+CsA_V1V2\\+MTX_V1V2", 
                                  "HiPD_V1V2+CsA_V1V2+others",
                                  water_df$treat_comb_V1V2)
 
-water_df$treat_comb_V1V2 <- gsub("HiPD_V1V2\\+CsA_V1V2\\+CTX_V1V2\\+AZT_V1V2\\+ISswitch_V1V2", 
+water_df$treat_comb_V1V2 = gsub("HiPD_V1V2\\+CsA_V1V2\\+CTX_V1V2\\+AZT_V1V2\\+ISswitch_V1V2", 
                                  "HiPD_V1V2+CsA_V1V2+AZT_V1V2+others",
                                  water_df$treat_comb_V1V2)
 
-water_df$treat_comb_V1V2 <- gsub("HiPD_V1V2\\+CsA_V1V2\\+AZT_V1V2\\+MTX_V1V2\\+ISswitch_V1V2", 
+water_df$treat_comb_V1V2 = gsub("HiPD_V1V2\\+CsA_V1V2\\+AZT_V1V2\\+MTX_V1V2\\+ISswitch_V1V2", 
                                  "HiPD_V1V2+CsA_V1V2+AZT_V1V2+others",
                                  water_df$treat_comb_V1V2)
 
-water_df$treat_comb_V1V2 <- gsub("HiPD_V1V2\\+CTX_V1V2\\+AZT_V1V2\\+IVIg_V1V2\\+ISswitch_V1V2", 
+water_df$treat_comb_V1V2 = gsub("HiPD_V1V2\\+CTX_V1V2\\+AZT_V1V2\\+IVIg_V1V2\\+ISswitch_V1V2", 
                                  "HiPD_V1V2+CTX_V1V2++others",
                                  water_df$treat_comb_V1V2)
 ```
@@ -1126,40 +1349,45 @@ water_df$treat_comb_V1V2 <- gsub("HiPD_V1V2\\+CTX_V1V2\\+AZT_V1V2\\+IVIg_V1V2\\+
 
 
 ```{r}
-water_df$log_d <- log(water_df$d)
+water_df$log_d = log(water_df$d)
 ```
 
 
 ```{r}
-water_df$marker <- NA # Default marker shape
-#data1$marker[data1$name %in% c(66)] <- "gdphi group" # Replace with your specific IDs for cross marker
-#water_df$marker[water_df$name %in% c(28,7,2,69,39,35,76,42,56)] <- "QLF Score: No 20% differed" # Replace with your specific IDs for star marker
-water_df$marker[water_df$name %in% c(17, 44, 6, 51, 16, 40, 71, 66, 43, 70)] <- "Yoyo group (convex): patients with both growth and decay rate"  #specific IDs for star marker
-water_df$marker[water_df$name %in% c(2, 7, 28, 35, 39, 42, 56, 69, 76)] <- "Stable: whose overall QLF score change less than 20%"  #specific IDs for star marker
+water_df = qlfffffff
 
+water_df$marker = NA # Default marker shape
+#data1$marker[data1$name %in% c(66)] = "gdphi group" 
+#water_df$marker[water_df$name %in% c(28,7,2,69,39,35,76,42,56)] = "QLF Score: No 20% differed" 
+water_df$marker[water_df$name %in% c(17, 44, 6, 51, 16, 40, 71, 66, 43, 70)] = "convex group: patients with both growth and decay rate"  #specific IDs for star marker
+water_df$marker[water_df$name %in% c(2, 7, 28, 35, 39, 42, 56, 69, 76)] = "stable: whose overall QLF score change less than 20%"  #specific IDs for star marker
+
+water_df$marker = ifelse(water_df$group == "concave", water_df$group, water_df$marker)
+
+custom_palette = c("firebrick2", "springgreen4")#, "skyblue2", "gold")#, "gold", "pink1", "snow4")
 
 
 waterfall_plot = ggplot(water_df, aes(x = reorder(name, change), y = change)) +
-  geom_col(aes(fill = treat_comb_V1V2), width = 0.8) +
+  geom_col(aes(fill = treat_G2.y), width = 0.9) +
+  scale_fill_manual(values = custom_palette) +
   guides(fill = guide_legend(ncol = 1)) +
   theme(legend.direction = "vertical", legend.box = "vertical") +
   geom_label(
-    aes(x = 10, y = -15, label = paste("dx")),
+    aes(x = 12, y = -15, label = paste("dx")),
     label.padding = unit(1, "lines"),
     label.size = 1,
-    color = "purple"
+    color = "snow4"
   ) +
   geom_label(
-    aes(x = 47, y = 12, label = paste("gx")),
+    aes(x = 67, y = 12, label = paste("gx")),
     label.padding = unit(1, "lines"),
     label.size = 1,
-    color = "purple"
+    color = "snow4"
   ) +
   #scale_fill_manual(values = c("T1" = "red", "T2" = "blue", "T3" = "green")) +
-  geom_point(aes(shape = marker, color = marker), size = 3, na.rm = TRUE) +
-  scale_shape_manual(values = c("Stable: whose overall QLF score change less than 20%" = 5, "Yoyo group (convex): patients with both growth and decay rate" = 8)) +
-  scale_color_manual(values = c("Stable: whose overall QLF score change less than 20%" = "black", "Yoyo group (convex): patients with both growth and decay rate" = "black")
-  ) +
+  geom_point(aes(shape = marker, color = marker), size = 2.6, na.rm = TRUE) +
+  scale_shape_manual(values = c("stable: whose overall QLF score change less than 20%" = 5, "convex group: patients with both growth and decay rate" = 8, "concave" = 10)) +
+  scale_color_manual(values = c("stable: whose overall QLF score change less than 20%" = "black", "convex group: patients with both growth and decay rate" = "black", "concave" = "black")) +
   labs(
     title = "Waterfall Plot",
     x = "ID",
@@ -1167,9 +1395,9 @@ waterfall_plot = ggplot(water_df, aes(x = reorder(name, change), y = change)) +
     fill = "Treatment Combination"
   ) +
   theme_minimal() +
-  theme_grey(base_size = 17.5) +
+  theme_grey(base_size = 15) +
   #theme(axis.text.x = element_text(angle = 45, hjust = 1))+
-  theme(axis.text = element_text(size = 9.5),  # Increase size of side labels
+  theme(axis.text = element_text(size = 7.5),  # Increase size of side labels
         legend.position = "right")# Rotate x-axis labels by 45 degrees
   #geom_text(data = data.frame(x = c(10, 40), y = c(-15, 15), label = c("dx", "gx")), aes(x, y, label = label), inherit.aes = FALSE, vjust = 0, hjust = 0, size = 10, color = "black")
 
@@ -1185,13 +1413,13 @@ print(waterfall_plot)
 library(dplyr)
 
 # Calculate summary statistics by treatment group
-summary_stats <- water_df %>%
-  group_by(treat_comb_V1V2) %>%
+summary_stats = qlfffffff %>%
+  group_by(treat_G2.y) %>%
   summarise(
     patient = n(),  # Count the number of rows (patients) in each group
     QLF_baseline_mean = mean(initial_size),
     QLF_overall_change_mean = mean(change),
-    duration_mean = mean(fu_date),
+    duration_mean = mean(total_fu_date),
   )
 
 # View the summary statistics
@@ -1206,38 +1434,38 @@ print(summary_stats)
 
 
 ```{r}
-t_df$treat_comb_V1V2 <- gsub(
+t_df$treat_comb_V1V2 = gsub(
   "HiPD_V1V2\\+CsA_V1V2\\+AZT_V1V2\\+MMF_V1V2\\+IVIg_V1V2\\+RTX_V1V2\\+ISswitch_V1V2",
   "HiPD_V1V2+CsA_V1V2+AZT_V1V2+others",
   t_df$treat_comb_V1V2)
 
-t_df$treat_comb_V1V2 <- gsub("CsA_V1V2\\+MTX_V1V2\\+ISswitch_V1V2", 
+t_df$treat_comb_V1V2 = gsub("CsA_V1V2\\+MTX_V1V2\\+ISswitch_V1V2", 
                                  "CsA_V1V2+MTX_V1V2+others",
                                  t_df$treat_comb_V1V2)
 
 
 
-t_df$treat_comb_V1V2 <- gsub("CsA_V1V2\\+Tac_V1V2\\+MTX_V1V2\\+IVIg_V1V2\\+ISswitch_V1V2", 
+t_df$treat_comb_V1V2 = gsub("CsA_V1V2\\+Tac_V1V2\\+MTX_V1V2\\+IVIg_V1V2\\+ISswitch_V1V2", 
                                  "CsA_V1V2+MTX_V1V2+others",
                                  t_df$treat_comb_V1V2)
 
-t_df$treat_comb_V1V2 <- gsub("HiPD_V1V2\\+CsA_V1V2\\+ISswitch_V1V2", 
+t_df$treat_comb_V1V2 = gsub("HiPD_V1V2\\+CsA_V1V2\\+ISswitch_V1V2", 
                                  "HiPD_V1V2+CsA_V1V2+others",
                                  t_df$treat_comb_V1V2)
 
-t_df$treat_comb_V1V2 <- gsub("HiPD_V1V2\\+CsA_V1V2\\+MTX_V1V2", 
+t_df$treat_comb_V1V2 = gsub("HiPD_V1V2\\+CsA_V1V2\\+MTX_V1V2", 
                                  "HiPD_V1V2+CsA_V1V2+others",
                                  t_df$treat_comb_V1V2)
 
-t_df$treat_comb_V1V2 <- gsub("HiPD_V1V2\\+CsA_V1V2\\+CTX_V1V2\\+AZT_V1V2\\+ISswitch_V1V2", 
+t_df$treat_comb_V1V2 = gsub("HiPD_V1V2\\+CsA_V1V2\\+CTX_V1V2\\+AZT_V1V2\\+ISswitch_V1V2", 
                                  "HiPD_V1V2+CsA_V1V2+AZT_V1V2+others",
                                  t_df$treat_comb_V1V2)
 
-t_df$treat_comb_V1V2 <- gsub("HiPD_V1V2\\+CsA_V1V2\\+AZT_V1V2\\+MTX_V1V2\\+ISswitch_V1V2", 
+t_df$treat_comb_V1V2 = gsub("HiPD_V1V2\\+CsA_V1V2\\+AZT_V1V2\\+MTX_V1V2\\+ISswitch_V1V2", 
                                  "HiPD_V1V2+CsA_V1V2+AZT_V1V2+others",
                                  t_df$treat_comb_V1V2)
 
-t_df$treat_comb_V1V2 <- gsub("HiPD_V1V2\\+CTX_V1V2\\+AZT_V1V2\\+IVIg_V1V2\\+ISswitch_V1V2", 
+t_df$treat_comb_V1V2 = gsub("HiPD_V1V2\\+CTX_V1V2\\+AZT_V1V2\\+IVIg_V1V2\\+ISswitch_V1V2", 
                                  "HiPD_V1V2+CTX_V1V2++others",
                                  t_df$treat_comb_V1V2)
 ```
@@ -1246,7 +1474,7 @@ t_df$treat_comb_V1V2 <- gsub("HiPD_V1V2\\+CTX_V1V2\\+AZT_V1V2\\+IVIg_V1V2\\+ISsw
 
 
 ```{r}
-treat <- read.csv("~/Desktop/MS report/data/Data-selected 2/IIMQILD_221104_Box.csv", sep = ",", header = TRUE)
+treat = read.csv("~/Desktop/MS report/data/Data-selected 2/IIMQILD_221104_Box.csv", sep = ",", header = TRUE)
 
 colnames(treat)[which(names(treat) == "Patient_ID")] = "SUBJID"
 
@@ -1259,7 +1487,7 @@ treat$name = as.numeric(factor(treat$SUBJID,
 
 library(dplyr)
 
-treat1 <- merge(treat, tt_df, by = "SUBJID", all = TRUE)
+treat1 = merge(treat, tt_df, by = "SUBJID", all = TRUE)
 
 ```
 
@@ -1344,31 +1572,34 @@ exp(a)
 
 ```{r}
 water_df$marker = NA # Default marker shape
-#data1$marker[data1$name %in% c(66)] <- "gdphi group" # Replace with your specific IDs for cross marker
-#water_df$marker[water_df$name %in% c(28,7,2,69,39,35,76,42,56)] <- "QLF Score: No 20% differed" # Replace with your specific IDs for star marker
-water_df$marker[water_df$name %in% c(17, 44, 6, 51, 16, 40, 71, 66, 43, 70)] <- "Yoyo group (convex): patients with both growth and decay rate"  #specific IDs for star marker
-water_df$marker[water_df$name %in% c(2, 7, 28, 35, 39, 42, 56, 69, 76)] <- "Stable: whose overall QLF score change less than 20%"  #specific IDs for star marker
-water_df$marker[water_df$name %in% c(17, 66, 6, 80)] <- "Top 4 treatment comb leads to highest decay rate in QLF score over time"
+#data1$marker[data1$name %in% c(66)] = "gdphi group"
+#water_df$marker[water_df$name %in% c(28,7,2,69,39,35,76,42,56)] = "QLF Score: No 20% differed" 
+water_df$marker[water_df$name %in% c(17, 44, 6, 51, 16, 40, 71, 66, 43, 70)] = "Yoyo group (convex): patients with both growth and decay rate"  #specific IDs for star marker
+water_df$marker[water_df$name %in% c(2, 7, 28, 35, 39, 42, 56, 69, 76)] = "Stable: whose overall QLF score change less than 20%"  #specific IDs for star marker
+water_df$marker[water_df$name %in% c(17, 66, 6, 80)] = "Top 4 treatment comb leads to highest decay rate in QLF score over time"
+
+custom_palette = c("firebrick2", "springgreen4", "skyblue2")#, "gold")#, "pink1", "snow4")
 
 
 waterfall_plot = ggplot(water_df, aes(x = reorder(name, change), y = change)) +
-  geom_col(aes(fill = treat_comb_V1V2), width = 0.8) +
+  geom_col(aes(fill = ISintG3), width = 0.8) +
+  scale_fill_manual(values = custom_palette) +
   guides(fill = guide_legend(ncol = 1)) +
   theme(legend.direction = "vertical", legend.box = "vertical") +
   geom_label(
-    aes(x = 10, y = -15, label = paste("dx")),
+    aes(x = 12, y = -15, label = paste("dx")),
     label.padding = unit(1, "lines"),
     label.size = 1,
-    color = "purple"
+    color = "snow4"
   ) +
   geom_label(
-    aes(x = 47, y = 12, label = paste("gx")),
+    aes(x = 67, y = 12, label = paste("gx")),
     label.padding = unit(1, "lines"),
     label.size = 1,
-    color = "purple"
+    color = "snow4"
   ) +
   #scale_fill_manual(values = c("T1" = "red", "T2" = "blue", "T3" = "green")) +
-  geom_point(aes(shape = marker, color = marker), size = 3, na.rm = TRUE) +
+  geom_point(aes(shape = marker, color = marker), size = 2.6, na.rm = TRUE) +
   scale_shape_manual(values = c("Yoyo group (convex): patients with both growth and decay rate" = 8, "Stable: whose overall QLF score change less than 20%" = 5, "Top 4 treatment comb leads to highest decay rate in QLF score over time" = 18)) +
   scale_color_manual(values = c("Yoyo group (convex): patients with both growth and decay rate" = "black", "Stable: whose overall QLF score change less than 20%" = "black", "Top 4 treatment comb leads to highest decay rate in QLF score over time" = "black")) +
   labs(
@@ -1378,9 +1609,9 @@ waterfall_plot = ggplot(water_df, aes(x = reorder(name, change), y = change)) +
     fill = "Treatment Combination"
   ) +
   theme_minimal() +
-  theme_grey(base_size = 16.5) +
+  theme_grey(base_size = 14.4) +
   #theme(axis.text.x = element_text(angle = 45, hjust = 1))+
-  theme(axis.text = element_text(size = 9),  # Increase size of side labels
+  theme(axis.text = element_text(size = 7.5),  # Increase size of side labels
         legend.position = "right")# Rotate x-axis labels by 45 degrees
   #geom_text(data = data.frame(x = c(10, 40), y = c(-15, 15), label = c("dx", "gx")), aes(x, y, label = label), inherit.aes = FALSE, vjust = 0, hjust = 0, size = 10, color = "black")
 
@@ -1389,4 +1620,211 @@ waterfall_plot = ggplot(water_df, aes(x = reorder(name, change), y = change)) +
 print(waterfall_plot)
 ```
 
+#####################################################
+#####################################################
+#####################################################
+#####################################################
+
+```{r}
+subset_1 = subset(qlfffffff, treat_G2.y == "G1")
+subset_1_g = subset_1[!is.na(subset_1$g) & !is.na(subset_1$Death.x),]
+subset_1_d = subset_1[!is.na(subset_1$d) & !is.na(subset_1$Death.x),]
+
+subset_2 = subset(qlfffffff, treat_G2.y == "G2")
+subset_2_g = subset_2[!is.na(subset_2$g) & !is.na(subset_2$Death.x),]
+subset_2_d = subset_2[!is.na(subset_2$d) & !is.na(subset_2$Death.x),]
+
+#subset_3 = subset(qlfffffff, ISintG3 == "ISint3_G3")
+#subset_3_g = subset_3[!is.na(subset_3$g) & !is.na(subset_3$Death.x),]
+#subset_3_d = subset_3[!is.na(subset_3$d) & !is.na(subset_3$Death.x),]
+
+#subset_4 = subset(qlfffffff, ISintG4.y == "ISint4_G3")
+#subset_4_g = subset_4[!is.na(subset_4$g) & !is.na(subset_4$Death.x),]
+#subset_4_d = subset_4[!is.na(subset_4$d) & !is.na(subset_4$Death.x),]
+```
+
+
+
+```{r}
+## decay
+median_decay_group1 = median(subset_1_d$d)
+median_decay_group2 = median(subset_2_d$d)
+
+wilcox_decay = wilcox.test(subset_1_d$d, subset_2_d$d, alternative = "two.sided")
+
+half_life_group1 = log(2) / median_decay_group1
+half_life_group2 = log(2) / median_decay_group2
+
+
+print(paste("Group1 decay median:", median_decay_group1))
+print(paste("Group2 decay median:", median_decay_group2))
+
+print(paste("Group1 half-life:", half_life_group1))
+print(paste("Group2 half-life:", half_life_group2))
+
+print(paste("P-value for decay comparison:", wilcox_decay$p.value))
+```
+```{r}
+## decay
+median_growth_group1 = median(subset_1_g$g)
+median_growth_group2 = median(subset_2_g$g)
+
+wilcox_growth = wilcox.test(subset_1_g$g, subset_2_g$g)
+
+double_life_group1 = log(2) / median_growth_group1
+double_life_group2 = log(2) / median_growth_group2
+
+
+print(paste("Group1 growth median:", median_growth_group1))
+print(paste("Group2 growth median:", median_growth_group2))
+
+print(paste("Group1 doubling-life:", double_life_group1))
+print(paste("Group2 doubling-life:", double_life_group2))
+
+print(paste("P-value for growth comparison:", wilcox_growth$p.value))
+```
+
+```{R}
+iqr = subset_2_g$g
+
+# Calculate half-life and doubling time for each individual
+half_life_group1 = log(2) / iqr
+
+# Calculate IQR
+quantile(half_life_group1, 0.25)
+quantile(half_life_group1, 0.75)
+IQR(half_life_group1)
+
+```
+
+
+```{r}
+# Function to calculate difference in means
+perm_func = function(x, y) {
+  all_values = c(x, y)
+  shuffled_values = sample(all_values)
+  shuffled_x = shuffled_values[1:length(x)]
+  shuffled_y = shuffled_values[(length(x) + 1):length(all_values)]
+  
+  return(mean(shuffled_x) - mean(shuffled_y))
+}
+
+# Perform the permutation test for growth rates
+set.seed(42) 
+num_permutations = 10000
+perm_diffs_g = replicate(num_permutations, perm_func(subset_1_g$g, subset_2_g$g))
+
+# Calculate the actual difference in means for growth rates
+actual_diff_g = mean(subset_1_g$g) - mean(subset_2_g$g)
+
+# Calculate the p-value for growth rates
+p_value_g = sum(abs(perm_diffs_g) >= abs(actual_diff_g)) / num_permutations
+
+# Perform the permutation test for decay rates
+perm_diffs_d = replicate(num_permutations, perm_func(subset_1_d$d, subset_2_d$d))
+
+# Calculate the actual difference in means for decay rates
+actual_diff_d = mean(subset_1_d$d) - mean(subset_2_d$d)
+
+# Calculate the p-value for decay rates
+p_value_d = sum(abs(perm_diffs_d) >= abs(actual_diff_d)) / num_permutations
+
+
+
+```
+
+
+```{R}
+library(gridExtra)
+
+# Combine the datasets
+df_d = data.frame(
+  Value = c(subset_1_d$d, subset_2_d$d),
+  Group = c(rep("Treatment Group1", length(subset_1_d$d)), rep("Treatment Group2", length(subset_2_d$d)))
+)
+
+# Perform a Wilcoxon test
+wilcox_decay = wilcox.test(subset_1_d$d, subset_2_d$d, alternative = "two.sided")
+
+# Create the decay plot
+plot_d = ggplot(df_d, aes(x = Group, y = Value)) +
+  geom_boxplot(outlier.shape = NA) +  # Suppressing outliers in the boxplot
+  geom_jitter(width = 0.2) +
+  labs(x = "Group", y = "decay rate (d)") +
+  annotate("text", x = 1.5, y = max(df_d$Value), label = paste("p-value =", round(wilcox_decay$p.value, 3)))
+
+# Combine the datasets
+df_g = data.frame(
+  Value = c(subset_1_g$g, subset_2_g$g),
+  Group = c(rep("Treatment Group1", length(subset_1_g$g)), rep("Treatment Group2", length(subset_2_g$g)))
+)
+
+# Perform a Wilcoxon test
+wilcox_growth = wilcox.test(subset_1_g$g, subset_2_g$g, alternative = "two.sided")
+
+# Create the growth plot
+plot_g = ggplot(df_g, aes(x = Group, y = Value)) +
+  geom_boxplot(outlier.shape = NA) +  # Suppressing outliers in the boxplot
+  geom_jitter(width = 0.2) +
+  labs(x = "Group", y = "growth rate (g)") +
+  annotate("text", x = 1.5, y = max(df_g$Value), label = paste("p-value =", round(wilcox_growth$p.value, 3)))
+
+# Combine the plots
+grid.arrange(plot_d, plot_g, ncol = 2)
+
+
+```
+
+```{r}
+
+#water_df_overall = t_df11[!(t_df11$selectedFit %in% c("not fit")), ]
+water_df_overall = qlfffffff
+
+data1 = water_df_overall %>%
+  mutate(group = ifelse(change < 0, "dx", "gx")) %>%
+  arrange(group, desc(change))
+
+#data1$marker = NA # Default marker shape
+#data1$marker[data1$name %in% c(66)] = "gdphi group"
+#data1$marker[data1$name %in% c(28,7,2,69,39,35,76,42,56)] = "QLF Score: No 20% differed" 
+#data1$marker[data1$name %in% c(17, 44, 6, 51, 16, 40, 71, 66, 43, 70)] = "yoyo group (all convex)" 
+
+#yoyo_id = which(data$name == 66)
+#no_fit_id = which(data$name == 71)
+#no_20_start = which(data$ID == 1)
+#no_20_end = which(data$ID == 9)
+data1 = data1 %>% 
+  mutate(selectedFit = recode(selectedFit, "2 evals not 20% diff" = "stable")) %>%
+  mutate(selectedFit = recode(selectedFit, "gx" = "growth (gx)")) %>%
+  mutate(selectedFit = recode(selectedFit, "dx" = "decay (dx)")) %>%
+  mutate(selectedFit = recode(selectedFit, "gd" = "convex")) %>%
+  mutate(selectedFit = recode(selectedFit, "gdphi" = "convex")) %>%
+  mutate(selectedFit = recode(selectedFit, "not fit" = "concave"))
+
+data1$Patterns = data1$selectedFit
+
+
+
+waterfall_plot = ggplot(data1, aes(x = reorder(name, change), y = change)) +
+  geom_col(aes(fill = Patterns), width = 0.8) +
+  labs(
+    title = "Waterfall Plot",
+    x = "ID",
+    y = "Change in Overall QLF Score"
+  ) +
+  #geom_point(aes(shape = marker, color = marker), size = 3, na.rm = TRUE) +
+  #scale_shape_manual(values = c("QLF Score: No 20% differed" = 8)) +
+  #scale_color_manual(values = c("QLF Score: No 20% differed" = "black"))+
+  scale_fill_manual(values = c("growth (gx)" = "firebrick3", "decay (dx)" = "forestgreen", "stable" = "goldenrod1", "convex" = "purple1", "concave" = "grey46"))+                  
+  theme_minimal() +
+  theme_grey(base_size = 22) +
+  #theme(axis.text.x = element_text(angle = 45, hjust = 1))+
+  theme(axis.text = element_text(size = 9),  # Increase size of side labels
+        legend.position = "right")
+  #geom_text(data = data.frame(x = c(10, 40), y = c(-15, 15), label = c("dx", "gx")), aes(x, y, label = label), inherit.aes = FALSE, vjust = 0, hjust = 0, size = 10, color = "black")
+
+
+
+print(waterfall_plot)
+```
 

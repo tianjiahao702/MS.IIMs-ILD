@@ -74,7 +74,6 @@ d2$date = as.numeric(d2$date)
 qlf$date = as.Date(qlf$VISITDTN, format = "%d%b%Y")
 qlf$date = as.numeric(qlf$date)
 
-
 ## extract needed variables for model
 
 d2 = d2 %>% 
@@ -111,6 +110,34 @@ out2$models
 out1$results
 out2$results
 ```
+
+
+
+```{R}
+# Open a PDF file to save the plots
+pdf("allpdf.pdf")
+
+# Set up the plotting parameters for 7 rows and 7 columns
+par(mfrow = c(3, 3))
+
+# Generate your plots
+plots <- gdrate(qlf, 0.05, TRUE)
+
+# Loop through the list of plots and print each one
+for (p in plots) {
+  print(p)
+}
+
+# Close the PDF file
+dev.off()
+
+
+
+
+
+```
+
+
 
 ```{R}
 # Define a function to generate the plot

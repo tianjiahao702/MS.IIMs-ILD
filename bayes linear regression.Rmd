@@ -209,13 +209,13 @@ dic.samples(mod, n.iter=1e3)
 
 
 #############
-- bayes hierarchical model
+- bayes hierarchical model (for fun)
 
 ```{r}
 library(brms)
 
 # Create a model formula
-formula <- bf(V12_WL_dQLF ~ HiPD_V1V2 + HiPD_V1V2 +
+formula = bf(V12_WL_dQLF ~ HiPD_V1V2 + HiPD_V1V2 +
                  CsA_V1V2 +    
                  CTX_V1V2 +      
                  AZT_V1V2 +       
@@ -230,7 +230,7 @@ formula <- bf(V12_WL_dQLF ~ HiPD_V1V2 + HiPD_V1V2 +
 
 
 # Fit the Bayesian multilevel model
-bayesian_model <- brm(formula = formula, 
+bayesian_model = brm(formula = formula, 
                       data = qlf,
                       family = gaussian(),
                       control = list(adapt_delta = 0.95),

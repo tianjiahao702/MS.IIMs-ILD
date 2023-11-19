@@ -128,9 +128,7 @@ qlf = as.data.frame(qlf)
 treat1 = Treat[, c("name", "V1_CTdate", "V1_WL_QLF",
                    "V1_WL_QILD", "Age", "Sex")]
 
-# Check for missing values in your dataset
 if (sum(is.na(treat1)) > 0) {
-  # Handle missing values ( remove rows or impute missing values)
   treat1 = na.omit(treat1) #remove rows with missing values
 }
 

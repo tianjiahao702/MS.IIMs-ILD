@@ -85,19 +85,15 @@ qlf = qlf %>%
 
 
 ```{r}
-# assuming your data is in a data frame called "my_data" with columns "patient", "date", and "value"
-# sort the data by patient and date
-my_data <- qlf[order(qlf$name, qlf$date),]
+my_data = qlf[order(qlf$name, qlf$date),]
 
-# create a time series object with patient as the time index and value as the data
-my_ts <- ts(qlf$size, start = c(1, 1), frequency = length(unique(qlf$name)))
+# create a time series object 
+my_ts = ts(qlf$size, start = c(1, 1), frequency = length(unique(qlf$name)))
 
-# difference the time series to achieve stationarity
-my_diff <- diff(my_ts)
+my_diff = diff(my_ts)
 
-# fit an AR model to the differenced data
 library(forecast)
-my_ar <- auto.arima(my_diff)
+my_ar = auto.arima(my_diff)
 
 
 ```
