@@ -206,7 +206,6 @@ qlf22$logdate = log(qlf22$date)
 
 
 ```{R}
-#qlf$[is.na(df$x)] <- 0
 
 model = lmer(logqild ~ HiPD_V1V2 +
                  CsA_V1V2 +    
